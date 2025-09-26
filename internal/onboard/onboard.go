@@ -85,7 +85,14 @@ func (s *Server) Start() error {
 	}
 
 	// Get an IDTokenVerifier that uses the provider's key set to verify JWTs
-	verifier := provider.Verifier(&oidc.Config{ClientID: s.clientID})
+	verifier := provider.Verifier(&oidc.Config{
+		ClientID: s.clientID,
+		SupportedSigningAlgs: []string{
+			"RS256",
+			"ES256",
+			"PS256",
+		},
+	})
 
 	// We want the OP to call us back here
 	redirectURL, err := url.JoinPath(s.ourURL, "/callback")
@@ -187,7 +194,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	})
 
 	if autherror != "" {
-		slog.Error("OIDC error received", "error", autherror, "description", errorDescription)
+		slog.Error("RP OIDC error received", "error", autherror, "description", errorDescription)
 		s.renderErrorPage(w, autherror, errorDescription)
 		return
 	}
@@ -200,7 +207,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	oauth2Token, err = s.oauth2Config.Exchange(ctx, code)
 	if err != nil {
-		slog.Error("OIDC error received", "error", autherror, "description", errorDescription)
+		slog.Error("RP token exchange error received", "error", autherror, "description", errorDescription)
 		s.renderErrorPage(w, autherror, errorDescription)
 		return
 	}
@@ -214,7 +221,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// Parse and verify ID Token payload.
 	idToken, err = s.verifier.Verify(ctx, rawIDToken)
 	if err != nil {
-		slog.Error("OIDC error received", "error", autherror, "description", errorDescription)
+		slog.Error("RP verifying the ID token error received", "error", autherror, "description", errorDescription)
 		s.renderErrorPage(w, autherror, errorDescription)
 		return
 	}
@@ -222,7 +229,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 	// Extract custom claims
 	var claims models.ELSI_IDTokenClaims
 	if err := idToken.Claims(&claims); err != nil {
-		slog.Error("OIDC error received", "error", autherror, "description", errorDescription)
+		slog.Error("RP extract custom claims error received", "error", autherror, "description", errorDescription)
 		s.renderErrorPage(w, autherror, errorDescription)
 		return
 	}

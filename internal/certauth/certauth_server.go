@@ -7,14 +7,10 @@ import (
 	"log/slog"
 	"math/rand"
 	"net"
+	"net/url"
 	"regexp"
+	"strings"
 	"time"
-
-	"github.com/gofiber/fiber/v2"
-	"github.com/gofiber/fiber/v2/middleware/cors"
-	"github.com/gofiber/fiber/v2/middleware/logger"
-	"github.com/gofiber/fiber/v2/middleware/recover"
-	"github.com/gofiber/fiber/v2/utils"
 
 	"github.com/evidenceledger/certauth/internal/cache"
 	"github.com/evidenceledger/certauth/internal/certconfig"
@@ -24,6 +20,12 @@ import (
 	"github.com/evidenceledger/certauth/internal/middleware"
 	"github.com/evidenceledger/certauth/internal/models"
 	"github.com/evidenceledger/certauth/internal/util/x509util"
+	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/cors"
+	"github.com/gofiber/fiber/v2/middleware/logger"
+	"github.com/gofiber/fiber/v2/middleware/recover"
+	"github.com/gofiber/fiber/v2/utils"
+	jwtV5 "github.com/golang-jwt/jwt/v5"
 )
 
 // Server represents the CertAuth OpenID Provider server
@@ -118,6 +120,9 @@ func (s *Server) setupRoutes() {
 	// Email verification code verification
 	s.app.Post("/verify-email-code", s.handleVerifyEmailCode)
 
+	// Handle consent received, generation of SSO cookie and redirection to Relying Party
+	s.app.Post("/consent", s.handleConsent)
+
 	// Test callback endpoint for testing the complete flow
 	s.app.Get("/callback", s.handleTestCallback)
 
@@ -165,7 +170,7 @@ func (s *Server) handleCertificateReceive(c *fiber.Ctx) error {
 		})
 	}
 
-	slog.Info("Certificate selection requested", "auth_code", authCode)
+	slog.Info("Certificate received entry", "auth_code", authCode)
 
 	// Retrieve the AuthorizationRequest associated with the authCode
 	authCodeObj, err := s.db.GetAuthCode(authCode)
@@ -197,7 +202,7 @@ func (s *Server) handleCertificateReceive(c *fiber.Ctx) error {
 		})
 	}
 
-	slog.Info("Certificate received", "auth_code", authCode, "cert_length", len(certData.Certificate.Raw))
+	slog.Info("Certificate received exit", "auth_code", authCode, "cert_length", len(certData.Certificate.Raw))
 
 	// Send HTML response
 	return s.html.Render(c, "2_certificate_received", fiber.Map{
@@ -555,13 +560,168 @@ func (s *Server) handleVerifyEmailCode(c *fiber.Ctx) error {
 	s.cache.Set(authCode+"_verified_email", storedEmail, 10*time.Minute)
 
 	// Render the certificate consent template
-	return s.html.Render(c, "4_certificate_consent", fiber.Map{
+	return s.html.Render(c, "4_request_certificate_consent", fiber.Map{
 		"authCode":    authCode,
 		"authCodeObj": authCodeObj,
 		"certType":    certData.CertificateType,
 		"subject":     certData.Subject,
 		"email":       storedEmail,
 	})
+}
+
+func (s *Server) handleConsent(c *fiber.Ctx) error {
+	// Get form data
+	authCode := utils.CopyString(c.FormValue("auth_code"))
+	email := utils.CopyString(c.FormValue("email"))
+
+	if authCode == "" || email == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing verification code or email",
+		})
+	}
+
+	slog.Info("Consent received from user", "email", email, "auth_code", authCode)
+
+	// Retrieve the stored email from cache
+	storedEmailAny, ok := s.cache.Get(authCode + "_email")
+	if !ok {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Email not found in cache",
+		})
+	}
+
+	storedEmail, ok := storedEmailAny.(string)
+	if !ok {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid stored email",
+		})
+	}
+	slog.Debug("Stored email", "email", storedEmail)
+
+	// Retrieve the AuthorizationRequest associated with the authCode
+	authCodeObj, err := s.db.GetAuthCode(authCode)
+	if err != nil {
+		slog.Error("Failed to retrieve authorization code from DB", "error", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Internal server error",
+		})
+	}
+	if authCodeObj == nil {
+		slog.Error("Authorization code not found in DB", "auth_code", authCode)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid authorization code",
+		})
+	}
+
+	// Generate SSO cookie
+	ssoCookie, err := s.generateSSOCookie(authCode)
+	if err != nil {
+		slog.Error("failed to generate sso cookie", "error", err)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": "Internal server error",
+		})
+	}
+
+	// Set cookie
+	c.Cookie(ssoCookie)
+
+	// Redirect (302) to RP with auth code
+	slog.Info("User consent processed successfully", "email", email, "auth_code", authCode)
+	// href="{{ .authCodeObj.RedirectURI }}?code={{ .authCode }}&state={{ .authCodeObj.State }}"
+	redirectURL := fmt.Sprintf("%s?code=%s", authCodeObj.RedirectURI, authCode)
+	if authCodeObj.State != "" {
+		redirectURL += fmt.Sprintf("&state=%s", authCodeObj.State)
+	}
+
+	return c.Redirect(redirectURL, fiber.StatusFound)
+
+	// // Render the certificate consent template
+	// return s.html.Render(c, "4_request_certificate_consent", fiber.Map{
+	// 	"authCode":    authCode,
+	// 	"authCodeObj": authCodeObj,
+	// 	"certType":    certData.CertificateType,
+	// 	"subject":     certData.Subject,
+	// 	"email":       storedEmail,
+	// })
+}
+
+// generateSSOCookie generates the SSO cookie
+func (s *Server) generateSSOCookie(authCode string) (*fiber.Cookie, error) {
+	// Retrieve the certificate data from cache
+	certDataAny, ok := s.cache.Get(authCode)
+	if !ok {
+		return nil, fmt.Errorf("certificate data not found for auth code: %s", authCode)
+	}
+
+	certData, ok := certDataAny.(*models.CertificateData)
+	if !ok {
+		return nil, fmt.Errorf("invalid certificate data for auth code: %s", authCode)
+	}
+
+	// Determine the sub identifier based on certificate type
+	var sub string
+	if certData.Subject.OrganizationIdentifier != "" {
+		sub = certData.Subject.OrganizationIdentifier
+	} else {
+		// For personal certificates, use serial number or generate a unique identifier
+		if certData.Subject.SerialNumber != "" {
+			sub = certData.Subject.SerialNumber
+		} else if certData.Subject.CommonName != "" {
+			sub = certData.Subject.CommonName + "_" + certData.Subject.SerialNumber
+		} else {
+			// Fallback: generate a hash based on certificate data
+			sub = fmt.Sprintf("%s_%s_%s",
+				certData.Subject.GivenName,
+				certData.Subject.Surname,
+				certData.Subject.SerialNumber)
+		}
+	}
+
+	// Standard OIDC claims
+	claims := jwtV5.MapClaims{
+		// Standard claims
+		"iss":   s.jwtService.Issuer(),                 // Issuer
+		"sub":   sub,                                   // Subject (org ID or personal identifier)
+		"aud":   s.cfg.CertAuthURL,                     // Audience
+		"exp":   time.Now().Add(24 * time.Hour).Unix(), // Expiration
+		"iat":   time.Now().Unix(),                     // Issued at
+		"email": certData.Subject.EmailAddress,         // Email
+	}
+
+	// Generate the token
+	token, err := s.jwtService.GenerateSSOCookieToken(claims)
+	if err != nil {
+		return nil, fmt.Errorf("failed to generate sso token: %w", err)
+	}
+
+	// Generate SSO cookie
+	cookie := new(fiber.Cookie)
+	cookie.Name = "sso.isbe"
+	cookie.Value = token
+	cookie.Expires = time.Now().Add(24 * time.Hour)
+	cookie.Secure = true
+	cookie.HTTPOnly = true
+	cookie.SameSite = "Lax"
+
+	// Set the domain to the main domain so it's accessible by subdomains
+	u, err := url.Parse(s.cfg.CertAuthURL)
+	if err != nil {
+		slog.Error("failed to parse cert auth url", "error", err)
+	} else {
+		hostname := u.Hostname()
+		// Heuristic to get the naked domain.
+		// This works for domains like 'example.com' and 'sub.example.com',
+		// but not for 'example.co.uk'.
+		if hostname != "localhost" && net.ParseIP(hostname) == nil {
+			parts := strings.Split(hostname, ".")
+			if len(parts) > 2 {
+				hostname = strings.Join(parts[len(parts)-2:], ".")
+			}
+		}
+		cookie.Domain = hostname
+	}
+
+	return cookie, nil
 }
 
 // Start starts the server

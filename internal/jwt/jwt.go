@@ -1,8 +1,9 @@
 package jwt
 
 import (
+	"crypto/ecdsa"
+	"crypto/elliptic"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -18,17 +19,17 @@ import (
 
 // Service handles JWT token generation
 type Service struct {
-	privateKey *rsa.PrivateKey
-	publicKey  *rsa.PublicKey
+	privateKey *ecdsa.PrivateKey
+	publicKey  *ecdsa.PublicKey
 	issuer     string
 }
 
 // NewService creates a new JWT service
 func NewService(issuer string) (*Service, error) {
-	// Generate RSA key pair for token signing
-	privateKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	// Generate EC key pair for token signing
+	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate RSA key: %w", err)
+		return nil, fmt.Errorf("failed to generate EC key: %w", err)
 	}
 
 	publicKey := &privateKey.PublicKey
@@ -100,7 +101,7 @@ func (s *Service) GenerateIDToken(authCode *models.AuthCode, certData *models.Ce
 	claims["elsi_certificate_type"] = certData.CertificateType
 
 	// Create token
-	token := jwt.NewWithClaims(jwt.SigningMethodRS256, claims)
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 
 	// Sign token
 	tokenString, err := token.SignedString(s.privateKey)
@@ -195,7 +196,7 @@ func (s *Service) GetPublicKey() (string, error) {
 	}
 
 	pemBlock := &pem.Block{
-		Type:  "RSA PUBLIC KEY",
+		Type:  "EC PUBLIC KEY",
 		Bytes: pubKeyBytes,
 	}
 
@@ -212,10 +213,29 @@ func (s *Service) GetJWKS() map[string]any {
 
 	jk.Set("use", "sig")
 	jk.Set(jwk.KeyIDKey, "certauth-key")
-	jk.Set(jwk.AlgorithmKey, "RS256")
+	jk.Set(jwk.AlgorithmKey, "ES256")
 
 	jwks := map[string]any{
 		"keys": []any{jk},
 	}
 	return jwks
+}
+
+// GenerateSSOCookieToken generates a JWT token for the SSO cookie
+func (s *Service) GenerateSSOCookieToken(claims jwt.MapClaims) (string, error) {
+	// Create token
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+
+	// Sign token
+	tokenString, err := token.SignedString(s.privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign sso token: %w", err)
+	}
+
+	return tokenString, nil
+}
+
+// Issuer returns the issuer of the JWT
+func (s *Service) Issuer() string {
+	return s.issuer
 }

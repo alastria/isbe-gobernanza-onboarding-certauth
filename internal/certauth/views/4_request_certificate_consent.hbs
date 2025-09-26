@@ -109,10 +109,9 @@
             <div class="ui segment">
                 <p>Do you want to proceed with the authentication?</p>
                 <div class="ui two buttons">
-                    <a class="ui green button"
-                        href="{{ .authCodeObj.RedirectURI }}?code={{ .authCode }}&state={{ .authCodeObj.State }}">
+                    <button id="grant-button" class="ui green button">
                         <i class="check icon"></i> Grant Access
-                    </a>
+                    </button>
                     <a class="ui red button"
                         href="{{ .authCodeObj.RedirectURI }}?error=access_denied&state={{ .authCodeObj.State }}">
                         <i class="times circle icon"></i> Deny Access
@@ -121,6 +120,34 @@
             </div>
         </div>
     </div>
+    <script>
+        $(document).ready(function () {
+            $('#grant-button').on('click', function (e) {
+                e.preventDefault();
+                var form = $('<form>', {
+                    'method': 'POST',
+                    'action': '/consent'
+                });
+                form.append($('<input>', {
+                    'type': 'hidden',
+                    'name': 'auth_code',
+                    'value': '{{ .authCode }}'
+                }));
+                form.append($('<input>', {
+                    'type': 'hidden',
+                    'name': 'state',
+                    'value': '{{ .authCodeObj.State }}'
+                }));
+                form.append($('<input>', {
+                    'type': 'hidden',
+                    'name': 'email',
+                    'value': '{{ .email }}'
+                }));
+                $('body').append(form);
+                form.submit();
+            });
+        });
+    </script>
 </body>
 
 </html>    

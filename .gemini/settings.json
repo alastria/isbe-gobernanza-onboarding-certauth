@@ -1,0 +1,8 @@
+{
+  "mcpServers": {
+    "gopls": {
+      "url": "http://localhost:6969/sessions/1",
+      "args": []
+    }
+  }
+}
