@@ -85,7 +85,7 @@ func main() {
 	if onboardURL == "" {
 		onboardURL = os.Getenv("ONBOARD_URL")
 		if onboardURL == "" {
-			onboardURL = "http://localhost:8092"
+			onboardURL = "https://onboard.mycredential.eu"
 		}
 	}
 

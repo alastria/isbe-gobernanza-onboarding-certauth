@@ -10,7 +10,7 @@ import (
 )
 
 // CreateAuthCode creates a new authorization code
-func (d *Database) CreateAuthCode(code *models.AuthCode) error {
+func (d *Database) CreateAuthCode(code *models.AuthProcess) error {
 	query := `
 		INSERT INTO authentication_attempts (
 			auth_code, client_id, redirect_uri, state, nonce, scope, created_at
@@ -30,14 +30,14 @@ func (d *Database) CreateAuthCode(code *models.AuthCode) error {
 }
 
 // GetAuthCode retrieves an authorization code by code value
-func (d *Database) GetAuthCode(code string) (*models.AuthCode, error) {
+func (d *Database) GetAuthCode(code string) (*models.AuthProcess, error) {
 	query := `
 		SELECT auth_code, client_id, redirect_uri, state, nonce, scope, created_at
 		FROM authentication_attempts 
 		WHERE auth_code = ? AND created_at > datetime('now', '-10 minutes')
 	`
 
-	var authCode models.AuthCode
+	var authCode models.AuthProcess
 	err := d.db.QueryRow(query, code).Scan(
 		&authCode.Code,
 		&authCode.ClientID, &authCode.RedirectURI, &authCode.State, &authCode.Nonce, &authCode.Scope,

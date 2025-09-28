@@ -64,20 +64,38 @@ func (s *Server) handleCertificateAuth(c *fiber.Ctx) error {
 		})
 	}
 
-	// Retrieve the AuthorizationRequest associated with the authCode
-	authCodeObj, err := s.db.GetAuthCode(authCode)
-	if err != nil {
-		slog.Error("Failed to retrieve authorization code from DB", "error", err)
+	// Retrieve the AuthorizationRequest associated with the authCode from the cache
+	// to ensure the auth code is valid and was recently issued
+	authReqInterface, found := s.cache.Get(authCode)
+	if !found {
+		slog.Error("Authorization code not found in cache", "auth_code", authCode)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid or expired authorization code",
+		})
+	}
+
+	authProcess, ok := authReqInterface.(*models.AuthProcess)
+	if !ok {
+		slog.Error("Invalid type for AuthorizationRequest in cache", "auth_code", authCode)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Internal server error",
 		})
 	}
-	if authCodeObj == nil {
-		slog.Error("Authorization code not found in DB", "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid authorization code",
-		})
-	}
+
+	// // Retrieve the AuthorizationRequest associated with the authCode
+	// authCodeObj, err := s.db.GetAuthCode(authCode)
+	// if err != nil {
+	// 	slog.Error("Failed to retrieve authorization code from DB", "error", err)
+	// 	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+	// 		"error": "Internal server error",
+	// 	})
+	// }
+	// if authCodeObj == nil {
+	// 	slog.Error("Authorization code not found in DB", "auth_code", authCode)
+	// 	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+	// 		"error": "Invalid authorization code",
+	// 	})
+	// }
 
 	slog.Info("Certificate authentication requested", "auth_code", authCode)
 
@@ -153,8 +171,11 @@ func (s *Server) handleCertificateAuth(c *fiber.Ctx) error {
 		Certificate:     cert,
 	}
 
-	// Store the certificate data in the cache
-	s.cache.Set(authCode, certData, 0)
+	// Set the certificate data in the auth request for later retrieval
+	authProcess.CertificateData = certData
+
+	// // Store the certificate data in the cache
+	// s.cache.Set(authCode, certData, 0)
 
 	// Redirect back to certauth
 	redirectURL := s.cfg.CertAuthURL + "/certificate-back?code=" + authCode

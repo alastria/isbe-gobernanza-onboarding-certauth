@@ -52,8 +52,10 @@ func (cache *Cache) Set(key string, value any, duration time.Duration) {
 		expires: expires,
 	})
 
+	// Delete expired entries periodically.
+	// The following instructions are not synchronized, but we do not care as long as DeleteExpired() is called
+	// "approximately" every 100 writes.
 	count := cache.counter.Add(1)
-
 	if count >= 100 {
 		cache.DeleteExpired()
 		cache.counter.Store(0)

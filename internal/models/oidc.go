@@ -6,7 +6,7 @@ import (
 	"github.com/golang-jwt/jwt/v5"
 )
 
-// AuthorizationRequest represents an OAuth2 authorization request
+// AuthorizationRequest represents an OAuth2 authorization request sent from the RP
 type AuthorizationRequest struct {
 	ResponseType string `json:"response_type"`
 	ClientID     string `json:"client_id"`
@@ -15,15 +15,6 @@ type AuthorizationRequest struct {
 	State        string `json:"state"`
 	Nonce        string `json:"nonce,omitempty"`
 	CreatedAt    time.Time
-}
-
-// TokenRequest represents a token exchange request
-type TokenRequest struct {
-	GrantType    string `form:"grant_type"`
-	Code         string `form:"code"`
-	RedirectURI  string `form:"redirect_uri"`
-	ClientID     string `form:"client_id"`
-	ClientSecret string `form:"client_secret"`
 }
 
 // RelyingParty represents a registered OIDC relying party
@@ -41,16 +32,38 @@ type RelyingParty struct {
 	UpdatedAt        time.Time `json:"updated_at"`
 }
 
-// AuthCode represents an authorization code
-type AuthCode struct {
-	Code        string    `json:"code"`
-	ClientID    string    `json:"client_id"`
-	RedirectURI string    `json:"redirect_uri"`
-	State       string    `json:"state"`
-	Nonce       string    `json:"nonce"`
-	Scope       string    `json:"scope"`
-	CreatedAt   time.Time `json:"created_at"`
-	ExpiresAt   time.Time `json:"expires_at"`
+// AuthProcess holds the info during the whole application authorization process for a given RP
+type AuthProcess struct {
+	Code                  string           `json:"code"`
+	ClientID              string           `json:"client_id"`
+	RedirectURI           string           `json:"redirect_uri"`
+	State                 string           `json:"state"`
+	Nonce                 string           `json:"nonce"`
+	Scope                 string           `json:"scope"`
+	CreatedAt             time.Time        `json:"created_at"`
+	ExpiresAt             time.Time        `json:"expires_at"`
+	CertificateData       *CertificateData `json:"certificate_data,omitempty"`
+	Email                 string           `json:"email,omitempty"`
+	EmailVerificationCode string           `json:"email_verification_code,omitempty"`
+	EmailVerified         bool             `json:"email_verified,omitempty"`
+	ConsentGiven          bool             `json:"consent_given,omitempty"`
+}
+
+// SSOSession represents a single sign-on session, stored in-memory in the server
+// This supports several RPs using the same certificate without having to re-authenticate the user.
+type SSOSession struct {
+	SessionID       string           `json:"session_id"`
+	CertificateData *CertificateData `json:"certificate_data,omitempty"`
+	Email           string           `json:"email,omitempty"`
+}
+
+// TokenRequest represents a token exchange request
+type TokenRequest struct {
+	GrantType    string `form:"grant_type"`
+	Code         string `form:"code"`
+	RedirectURI  string `form:"redirect_uri"`
+	ClientID     string `form:"client_id"`
+	ClientSecret string `form:"client_secret"`
 }
 
 // IDToken represents an OpenID Connect ID token

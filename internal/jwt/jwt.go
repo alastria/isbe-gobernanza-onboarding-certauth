@@ -11,6 +11,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/evidenceledger/certauth/internal/errl"
 	"github.com/evidenceledger/certauth/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 
@@ -43,7 +44,7 @@ func NewService(issuer string) (*Service, error) {
 }
 
 // GenerateIDToken generates an OpenID Connect ID token
-func (s *Service) GenerateIDToken(authCode *models.AuthCode, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
+func (s *Service) GenerateIDToken(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
 	now := time.Now()
 
 	// Determine the sub identifier based on certificate type
@@ -119,7 +120,7 @@ func (s *Service) GenerateIDToken(authCode *models.AuthCode, certData *models.Ce
 }
 
 // GenerateAccessToken generates an OAuth2 access token
-func (s *Service) GenerateAccessToken(authCode *models.AuthCode, certData *models.CertificateData, rp *models.RelyingParty) (*models.AccessToken, error) {
+func (s *Service) GenerateAccessToken(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (*models.AccessToken, error) {
 	expiresIn := rp.TokenExpiry
 
 	// Generate random token string
@@ -238,4 +239,31 @@ func (s *Service) GenerateSSOCookieToken(claims jwt.MapClaims) (string, error) {
 // Issuer returns the issuer of the JWT
 func (s *Service) Issuer() string {
 	return s.issuer
+}
+
+// ParseSSOCookieToken parses a JWT token from the SSO cookie
+func (s *Service) ParseSSOCookieToken(tokenString string) (jwt.MapClaims, error) {
+	if tokenString == "" {
+		return nil, errl.Errorf("empty sso token")
+	}
+
+	// Parse token
+	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
+		// Don't forget to validate the alg is what you expect:
+		if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
+			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+		}
+
+		return s.publicKey, nil
+	})
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to parse sso token: %w", err)
+	}
+
+	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
+		return claims, nil
+	}
+
+	return nil, fmt.Errorf("invalid sso token")
 }

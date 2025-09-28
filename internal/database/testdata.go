@@ -41,8 +41,8 @@ func (d *Database) initializeTestData() error {
 		Name:        "Example RP Application",
 		Description: "Example Relying Party application demonstrating certificate authentication",
 		ClientID:    "example-rp",
-		RedirectURL: "http://localhost:8092/callback",
-		OriginURL:   "http://localhost:8092",
+		RedirectURL: "https://onboard.mycredential.eu/callback",
+		OriginURL:   "http://onboard.mycredential.eu",
 		Scopes:      "openid eidas",
 		TokenExpiry: 3600,
 	}
