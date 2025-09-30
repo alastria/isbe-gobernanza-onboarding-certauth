@@ -1,7 +1,6 @@
 package certauth
 
 import (
-	"context"
 	"crypto/rand"
 	"encoding/base64"
 	"fmt"
@@ -15,7 +14,6 @@ import (
 
 	"github.com/evidenceledger/certauth/internal/errl"
 	"github.com/evidenceledger/certauth/internal/models"
-	"github.com/evidenceledger/certauth/internal/util/x509util"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/utils"
 	jwtV5 "github.com/golang-jwt/jwt/v5"
@@ -51,15 +49,13 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 		"client_id", c.Query("client_id"),
 		"redirect_uri", c.Query("redirect_uri"))
 
-	state := c.Query("state")
-
 	// Parse authorization request
 	authReq := &models.AuthorizationRequest{
 		ResponseType: c.Query("response_type"),
 		ClientID:     c.Query("client_id"),
 		RedirectURI:  c.Query("redirect_uri"),
 		Scope:        c.Query("scope"),
-		State:        state,
+		State:        c.Query("state"),
 		Nonce:        c.Query("nonce"),
 		CreatedAt:    time.Now(),
 	}
@@ -79,6 +75,7 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 	}
 
 	// Validate redirect_uri matches registered RP redirect URL
+	// For security reasons, the redirect_uri must be the same as the one that was registered
 	if authReq.RedirectURI != rp.RedirectURL {
 		return s.handleAuthorizationError(c, authReq, errl.Errorf("redirect_uri mismatch"))
 	}
@@ -89,7 +86,7 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 	}
 
 	// Check if we received the SSO cookie
-	ssoCookie := c.Cookies("sso_certauth")
+	ssoCookie := c.Cookies("__Http-sso_certauth")
 	ssoClaims, err := s.jwtService.ParseSSOCookieToken(ssoCookie)
 	if err != nil {
 		slog.Warn("Invalid SSO cookie received, proceeding with normal flow", "error", err)
@@ -98,13 +95,13 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 	var ssoSession *models.SSOSession
 	if ssoClaims != nil {
 
-		// Valid SSO cookie, bypass certificate selection
+		// Valid SSO cookie, we may bypass certificate selection
 		slog.Info("Valid SSO cookie received", "subject", ssoClaims["sub"])
 
 		// Retrieve the SSO session ID from the claims
 		ssoSessionID, _ := ssoClaims["session_id"].(string)
 
-		// Retrieve the SSO session data from the cache
+		// Retrieve the SSO session data from the cache corresponding to that session id
 		ssoSessionIntf, found := s.cache.Get(ssoSessionID)
 		if !found {
 			slog.Warn("SSO session not found in cache, proceeding with normal flow", "sso_session_id", ssoSessionID)
@@ -124,21 +121,21 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 
 	// Generate the application authorization session
 	// We use the cache with an expiration reasonable for the user to select and use the certificate
-	// The key is the auth code, the value is the certificate data once received
+	// It will hold the certificate data once it is received by the certsec handler
 	s.cache.Set(authProcess.Code, authProcess, 15*time.Minute)
 
 	if ssoSession != nil {
 
 		// Bypass certificate selection and return directly to caller
-		slog.Debug("bypass certificate selection", "code", authProcess.Code, "redirect_uri", c.Query("redirect_uri"))
+		slog.Debug("bypass certificate selection", "code", authProcess.Code, "redirect_uri", authProcess.RedirectURI)
 
 		// Store certificate data and email of the user in the authProcess struct
 		authProcess.CertificateData = ssoSession.CertificateData
 		authProcess.Email = ssoSession.Email
 
-		redirectURL := fmt.Sprintf("%s?code=%s", c.Query("redirect_uri"), authProcess.Code)
-		if state != "" {
-			redirectURL += fmt.Sprintf("&state=%s", state)
+		redirectURL := fmt.Sprintf("%s?code=%s", authProcess.RedirectURI, authProcess.Code)
+		if authProcess.State != "" {
+			redirectURL += fmt.Sprintf("&state=%s", authProcess.State)
 		}
 
 		return c.Redirect(redirectURL, fiber.StatusFound)
@@ -147,17 +144,96 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 
 		// No valid SSO cookie, proceed with normal flow
 
-		// Redirect to certificate authentication
-		redirectURL := s.cfg.CertAuthURL + "/certificate-select?code=" + authProcess.Code
-		return c.Status(fiber.StatusFound).Redirect(redirectURL)
+		// Present the screen informing the user about the next step
+		return s.html.Render(c, "1_certificate_select", fiber.Map{
+			"authCode":   authProcess.Code,
+			"certsecURL": s.cfg.CertSecURL,
+		})
 
 	}
 
 }
 
-// handleTokenExchange handles OAuth2 token endpoint
+// handleCertificateReceive is invoked from CertSec when the user has selected a certificate in the browser popup
+func (s *Server) handleCertificateReceive(c *fiber.Ctx) error {
+	// Get auth code from query parameter
+	authCode := c.Query("code")
+	if authCode == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing authorization code",
+		})
+	}
+
+	slog.Info("Certificate received entry", "auth_code", authCode)
+
+	// Retrieve the AuthorizationRequest from the application authentication session
+	entry, _ := s.cache.Get(authCode)
+	if entry == nil {
+		slog.Error("Authorization code not found in cache", "auth_code", authCode)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Authorization code not found",
+		})
+	}
+
+	authProcess, ok := entry.(*models.AuthProcess)
+	if !ok {
+		slog.Error("Invalid authorization request type in cache", "auth_code", authCode)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Invalid authorization request",
+		})
+	}
+
+	// Get the certificate data that was set by the certificate authentication process
+	certData := authProcess.CertificateData
+
+	// Check if the certificate is already registered
+	email, err := s.db.GetRegistrationEmail(certData.OrganizationID)
+	if err != nil {
+		return errl.Errorf("failed to get registration email: %w", err)
+	}
+
+	if email != "" {
+
+		// The certificate is already registered, bypass certificate and email validation
+
+		// Bypass certificate selection and return directly to caller
+		slog.Debug("bypass certificate selection", "code", authProcess.Code, "redirect_uri", authProcess.RedirectURI)
+
+		// Store email of the user in the authProcess struct
+		authProcess.Email = email
+
+		redirectURL := fmt.Sprintf("%s?code=%s", authProcess.RedirectURI, authProcess.Code)
+		if authProcess.State != "" {
+			redirectURL += fmt.Sprintf("&state=%s", authProcess.State)
+		}
+
+		return c.Redirect(redirectURL, fiber.StatusFound)
+
+	}
+
+	// Otherwise, we present the certificate data to the user and must request and validate its email
+	slog.Info("Certificate received exit", "auth_code", authCode, "cert_length", len(certData.Certificate.Raw))
+
+	// Present the screen
+	return s.html.Render(c, "2_certificate_received", fiber.Map{
+		"authCode":    authCode,
+		"authCodeObj": authProcess,
+		"certType":    certData.CertificateType,
+		"subject":     certData.Subject,
+	})
+
+}
+
+// handleTokenExchange handles OAuth2 token endpoint.
+// This is the last step for the RP in the authentication flow.
 func (s *Server) handleTokenExchange(c *fiber.Ctx) error {
 	slog.Info("Token request received")
+
+	// We reject immediately RPs which are not authorized
+	username, err := s.validateTokenAuthorization(c)
+	if err != nil {
+		return errl.Errorf("invalid authorization: %w", err)
+	}
 
 	// Parse token request
 	var tokenReq models.TokenRequest
@@ -165,47 +241,8 @@ func (s *Server) handleTokenExchange(c *fiber.Ctx) error {
 		return errl.Errorf("invalid request body: %w", err)
 	}
 
-	// Get authorization header
-	auth := c.Get(fiber.HeaderAuthorization)
-
-	// Check if the header contains content besides "basic".
-	if len(auth) <= 6 || !utils.EqualFold(auth[:6], "basic ") {
-		return errl.Errorf("invalid authorization header")
-	}
-
-	// Decode the header contents
-	raw, err := base64.StdEncoding.DecodeString(auth[6:])
-	if err != nil {
-		return errl.Errorf("invalid authorization header: %w", err)
-	}
-
-	// Get the credentials
-	creds := utils.UnsafeString(raw)
-
-	// Check if the credentials are in the correct form
-	// which is "username:password".
-	index := strings.Index(creds, ":")
-	if index == -1 {
-		return errl.Errorf("invalid authorization header")
-	}
-
-	// Get the username and password
-	username := creds[:index]
-	password := creds[index+1:]
-
-	// Set the fields in tokenReq
+	// Set the user name in tokenReq
 	tokenReq.ClientID = username
-	tokenReq.ClientSecret = password
-
-	// Validate client credentials
-	valid, err := s.db.ValidateClientSecret(username, password)
-	if err != nil {
-		slog.Error("Failed to validate client secret", "error", err)
-		return errl.Errorf("internal error")
-	}
-	if !valid {
-		return errl.Errorf("invalid client credentials")
-	}
 
 	// Retrieve the AuthorizationRequest associated with the authCode
 	authCodeIntf, _ := s.cache.Get(tokenReq.Code)
@@ -244,7 +281,7 @@ func (s *Server) handleTokenExchange(c *fiber.Ctx) error {
 	}
 
 	// Generate tokens with certificate data if available
-	tokens, err := s.generateTokens(authProcess, rp, certData)
+	tokens, err := s.generateTokens(authProcess, rp)
 	if err != nil {
 		return errl.Errorf("failed to generate tokens: %w", err)
 	}
@@ -269,40 +306,6 @@ func (s *Server) Logout(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{"status": "logged_out"})
 }
 
-// AdminDashboard handles admin dashboard
-func (s *Server) AdminDashboard(c *fiber.Ctx) error {
-	// TODO: Implement admin dashboard
-	return c.SendStatus(fiber.StatusNotImplemented)
-}
-
-// ListRP lists all relying parties
-func (s *Server) ListRP(c *fiber.Ctx) error {
-	rps, err := s.db.ListRelyingParties()
-	if err != nil {
-		return errl.Errorf("failed to list relying parties: %w", err)
-	}
-
-	return c.JSON(rps)
-}
-
-// CreateRP creates a new relying party
-func (s *Server) CreateRP(c *fiber.Ctx) error {
-	// TODO: Implement RP creation
-	return c.SendStatus(fiber.StatusNotImplemented)
-}
-
-// UpdateRP updates an existing relying party
-func (s *Server) UpdateRP(c *fiber.Ctx) error {
-	// TODO: Implement RP update
-	return c.SendStatus(fiber.StatusNotImplemented)
-}
-
-// DeleteRP deletes a relying party
-func (s *Server) DeleteRP(c *fiber.Ctx) error {
-	// TODO: Implement RP deletion
-	return c.SendStatus(fiber.StatusNotImplemented)
-}
-
 // Helper methods
 
 func (s *Server) validateAuthorizationRequest(req *models.AuthorizationRequest) error {
@@ -322,6 +325,50 @@ func (s *Server) validateAuthorizationRequest(req *models.AuthorizationRequest) 
 		return errl.Errorf("eidas scope required")
 	}
 	return nil
+}
+
+func (s *Server) validateTokenAuthorization(c *fiber.Ctx) (clientid string, err error) {
+
+	// Get authorization header
+	authHeader := c.Get(fiber.HeaderAuthorization)
+
+	// Check if the header contains content besides "basic"
+	if len(authHeader) <= 6 || !utils.EqualFold(authHeader[:6], "basic ") {
+		return "", errl.Errorf("invalid authorization header")
+	}
+
+	// Decode the header contents
+	raw, err := base64.StdEncoding.DecodeString(authHeader[6:])
+	if err != nil {
+		return "", errl.Errorf("invalid authorization header: %w", err)
+	}
+
+	// Get the credentials
+	creds := string(raw)
+
+	// Check if the credentials are in the correct form
+	// which is "username:password".
+	index := strings.Index(creds, ":")
+	if index == -1 {
+		return "", errl.Errorf("invalid authorization header")
+	}
+
+	// Get the username and password
+	username := creds[:index]
+	password := creds[index+1:]
+
+	// Validate client credentials
+	valid, err := s.db.ValidateClientSecret(username, password)
+	if err != nil {
+		slog.Error("Failed to validate client secret", "error", err)
+		return "", errl.Errorf("internal error")
+	}
+	if !valid {
+		return "", errl.Errorf("invalid client credentials")
+	}
+
+	username = utils.CopyString(username)
+	return username, nil
 }
 
 // handleAuthorizationError handles authorization errors by redirecting to the RP with error details
@@ -366,59 +413,45 @@ func (s *Server) generateAuthCode(req *models.AuthorizationRequest, rp *models.R
 	return authCode
 }
 
-func (s *Server) generateTokens(authCode *models.AuthProcess, rp *models.RelyingParty, certData *models.CertificateData) (map[string]any, error) {
-	if s.jwtService == nil {
-		// Fallback to basic tokens if JWT service is not available
-		accessToken := generateRandomString()
-		return map[string]any{
-			"access_token": accessToken,
-			"token_type":   "Bearer",
-			"expires_in":   3600,
-			"scope":        authCode.Scope,
-			"id_token":     "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...", // Placeholder
-		}, nil
+func (s *Server) generateTokens(authProcess *models.AuthProcess, rp *models.RelyingParty) (map[string]any, error) {
+
+	certData := authProcess.CertificateData
+
+	// It is an error not to have certificate data
+	// This should not happen if the flow is correct, as certData is set in handleCertificateReceive
+	// and handleConsent. If it's nil, it means something went wrong or the session expired.
+	// We return an error to the client. This is an internal server error.
+	if certData == nil {
+		return nil, errl.Errorf("no certificate data found in auth process: %s", authProcess.Code)
 	}
 
 	// If we have certificate data, generate real JWT tokens
-	if certData != nil {
 
-		storedEmail, found := s.cache.Get(authCode.Code + "_verified_email")
-		slog.Debug("generateTokens", "storedEmail", storedEmail, "found", found)
-		// Generate ID token
-		idToken, err := s.jwtService.GenerateIDToken(authCode, certData, rp)
-		if err != nil {
-			return nil, errl.Errorf("failed to generate ID token: %w", err)
-		}
-
-		// Generate access token
-		accessToken, err := s.jwtService.GenerateAccessToken(authCode, certData, rp)
-		if err != nil {
-			return nil, errl.Errorf("failed to generate access token: %w", err)
-		}
-
-		slog.Info("Real JWT tokens generated with certificate data",
-			"organization_id", certData.OrganizationID,
-			"organization", certData.Subject.Organization,
-		)
-
-		return map[string]any{
-			"access_token": accessToken.AccessToken,
-			"token_type":   accessToken.TokenType,
-			"expires_in":   accessToken.ExpiresIn,
-			"scope":        accessToken.Scope,
-			"id_token":     idToken,
-		}, nil
+	// Generate ID token
+	idToken, err := s.jwtService.GenerateIDToken(authProcess, certData, rp)
+	if err != nil {
+		return nil, errl.Errorf("failed to generate ID token: %w", err)
 	}
 
-	// Fallback to basic tokens without certificate data
-	accessToken := generateRandomString()
-	return map[string]interface{}{
-		"access_token": accessToken,
-		"token_type":   "Bearer",
-		"expires_in":   rp.TokenExpiry,
-		"scope":        authCode.Scope,
-		"id_token":     "eyJhbGciOiJSUzI1NiIsInR5cCI6IkpXVCJ9...", // Placeholder for now
+	// Generate access token
+	accessToken, err := s.jwtService.GenerateAccessToken(authProcess, certData, rp)
+	if err != nil {
+		return nil, errl.Errorf("failed to generate access token: %w", err)
+	}
+
+	slog.Info("Real JWT tokens generated with certificate data",
+		"organization_id", certData.OrganizationID,
+		"organization", certData.Subject.Organization,
+	)
+
+	return map[string]any{
+		"access_token": accessToken.AccessToken,
+		"token_type":   accessToken.TokenType,
+		"expires_in":   accessToken.ExpiresIn,
+		"scope":        accessToken.Scope,
+		"id_token":     idToken,
 	}, nil
+
 }
 
 func generateRandomString() string {
@@ -428,248 +461,10 @@ func generateRandomString() string {
 	return base64.URLEncoding.EncodeToString(tokenBytes)
 }
 
-// handleCertificateSelect handles the certificate selection screen
-func (s *Server) handleCertificateSelect(c *fiber.Ctx) error {
-	// Get auth code from query parameter
-	authCode := c.Query("code")
-	if authCode == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Missing authorization code",
-		})
-	}
-
-	slog.Info("Certificate selection requested", "auth_code", authCode)
-
-	// Send HTML response
-	return s.html.Render(c, "1_certificate_select", fiber.Map{
-		"authCode":   authCode,
-		"certsecURL": s.cfg.CertSecURL,
-	})
-
-}
-
-func (s *Server) handleCertificateReceive(c *fiber.Ctx) error {
-	// Get auth code from query parameter
-	authCode := c.Query("code")
-	if authCode == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Missing authorization code",
-		})
-	}
-
-	slog.Info("Certificate received entry", "auth_code", authCode)
-
-	// Retrieve the AuthorizationRequest from the application authentication session
-	entry, _ := s.cache.Get(authCode)
-	if entry == nil {
-		slog.Error("Authorization code not found in cache", "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Authorization code not found",
-		})
-	}
-
-	authCodeObj, ok := entry.(*models.AuthProcess)
-	if !ok {
-		slog.Error("Invalid authorization request type in cache", "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid authorization request",
-		})
-	}
-
-	// Get the certificate data that was set by the certificate authentication process
-	certData := authCodeObj.CertificateData
-
-	slog.Info("Certificate received exit", "auth_code", authCode, "cert_length", len(certData.Certificate.Raw))
-
-	// Send HTML response
-	return s.html.Render(c, "2_certificate_received", fiber.Map{
-		"authCode":    authCode,
-		"authCodeObj": authCodeObj,
-		"certType":    certData.CertificateType,
-		"subject":     certData.Subject,
-	})
-
-}
-
 // handleJWKS handles the JSON Web Key Set endpoint
 func (s *Server) handleJWKS(c *fiber.Ctx) error {
 	jwks := s.jwtService.GetJWKS()
 	return c.JSON(jwks)
-}
-
-// handleTestToken creates a test token with organizational certificate data
-func (s *Server) handleTestToken(c *fiber.Ctx) error {
-	slog.Debug("Test organizational token generation requested")
-
-	// Create test organizational certificate data
-	testCertData := &models.CertificateData{
-		Subject: &x509util.ELSIName{
-			Country:                "ES",
-			Organization:           "Test Organization",
-			OrganizationalUnit:     "IT Department",
-			CommonName:             "Test User",
-			GivenName:              "Test",
-			Surname:                "User",
-			EmailAddress:           "test@example.com",
-			OrganizationIdentifier: "ES-123456789",
-			Locality:               "Madrid",
-			Province:               "Madrid",
-			StreetAddress:          "Calle Test 123",
-			PostalCode:             "28001",
-			SerialNumber:           "123456789ABC",
-		},
-		Issuer: &x509util.ELSIName{
-			Country:                "ES",
-			Organization:           "Test Organization",
-			OrganizationIdentifier: "ES-123456789",
-		},
-		ValidFrom:       time.Now(),
-		ValidTo:         time.Now().Add(365 * 24 * time.Hour),
-		OrganizationID:  "ES-123456789",
-		CertificateType: "organizational",
-	}
-
-	return s.generateTestTokens(c, testCertData)
-}
-
-// handleTestPersonalToken creates a test token with personal certificate data
-func (s *Server) handleTestPersonalToken(c *fiber.Ctx) error {
-	slog.Debug("Test personal token generation requested")
-
-	// Create test personal certificate data
-	testCertData := &models.CertificateData{
-		Subject: &x509util.ELSIName{
-			Country:       "ES",
-			CommonName:    "Juan Pérez García",
-			GivenName:     "Juan",
-			Surname:       "Pérez García",
-			EmailAddress:  "juan.perez@example.com",
-			Locality:      "Barcelona",
-			Province:      "Barcelona",
-			StreetAddress: "Carrer de Test 456",
-			PostalCode:    "08001",
-			SerialNumber:  "PERS123456789",
-		},
-		Issuer: &x509util.ELSIName{
-			Country: "ES",
-		},
-		ValidFrom:       time.Now(),
-		ValidTo:         time.Now().Add(365 * 24 * time.Hour),
-		OrganizationID:  "", // Empty for personal certificates
-		CertificateType: "personal",
-	}
-
-	return s.generateTestTokens(c, testCertData)
-}
-
-// handleTestCallback handles the test callback endpoint to display the received authorization code
-func (s *Server) handleTestCallback(c *fiber.Ctx) error {
-	authCode := c.Query("code")
-	state := c.Query("state")
-	error := c.Query("error")
-	errorDescription := c.Query("error_description")
-
-	slog.Info("Test callback received", "auth_code", authCode, "state", state, "error", error)
-
-	// Return a simple HTML page showing the callback parameters
-	html := `<!DOCTYPE html>
-<html>
-<head>
-    <title>OIDC Callback Test</title>
-    <style>
-        body { font-family: Arial, sans-serif; margin: 40px; }
-        .container { max-width: 800px; margin: 0 auto; }
-        .success { background: #d4edda; border: 1px solid #c3e6cb; padding: 15px; border-radius: 4px; margin: 20px 0; }
-        .error { background: #f8d7da; border: 1px solid #f5c6cb; padding: 15px; border-radius: 4px; margin: 20px 0; }
-        .code { background: #f8f9fa; border: 1px solid #e9ecef; padding: 10px; border-radius: 4px; font-family: monospace; margin: 10px 0; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <h1>OIDC Callback Test</h1>`
-
-	if error != "" {
-		html += `
-        <div class="error">
-            <h2>Error Received</h2>
-            <p><strong>Error:</strong> ` + error + `</p>
-            <p><strong>Description:</strong> ` + errorDescription + `</p>
-            <p><strong>State:</strong> ` + state + `</p>
-        </div>`
-	} else {
-		html += `
-        <div class="success">
-            <h2>Success!</h2>
-            <p>The OIDC authorization code flow completed successfully.</p>
-            <p><strong>Authorization Code:</strong></p>
-            <div class="code">` + authCode + `</div>
-            <p><strong>State:</strong> ` + state + `</p>
-            <p><em>Note: This is a test callback. In a real application, the RP would exchange this authorization code for tokens.</em></p>
-        </div>`
-	}
-
-	html += `
-    </div>
-</body>
-</html>`
-
-	c.Set("Content-Type", "text/html; charset=utf-8")
-	return c.Send([]byte(html))
-}
-
-// generateTestTokens generates test JWT tokens with the provided certificate data
-func (s *Server) generateTestTokens(c *fiber.Ctx, certData *models.CertificateData) error {
-	// Create test auth code and RP
-	testAuthCode := &models.AuthProcess{
-		Code:        "test-code-123",
-		ClientID:    "test-client",
-		RedirectURI: "http://localhost:3000/callback",
-		Scope:       "openid eidas",
-		CreatedAt:   time.Now(),
-	}
-
-	testRP := &models.RelyingParty{
-		ID:          1,
-		Name:        "Test Application",
-		Description: "Test application for development",
-		ClientID:    "test-client",
-		RedirectURL: "http://localhost:3000/callback",
-		OriginURL:   "http://localhost:3000",
-		Scopes:      "openid eidas",
-		TokenExpiry: 3600,
-	}
-
-	// Generate ID token
-	idToken, err := s.jwtService.GenerateIDToken(testAuthCode, certData, testRP)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to generate ID token",
-		})
-	}
-
-	// Generate access token
-	accessToken, err := s.jwtService.GenerateAccessToken(testAuthCode, certData, testRP)
-	if err != nil {
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": "Failed to generate access token",
-		})
-	}
-
-	slog.Info("Test tokens generated successfully",
-		"certificate_type", certData.CertificateType,
-		"subject", certData.Subject.CommonName,
-		"organization_id", certData.OrganizationID,
-	)
-
-	return c.JSON(fiber.Map{
-		"access_token":     accessToken.AccessToken,
-		"token_type":       accessToken.TokenType,
-		"expires_in":       accessToken.ExpiresIn,
-		"scope":            accessToken.Scope,
-		"id_token":         idToken,
-		"certificate_type": certData.CertificateType,
-		"organization_id":  certData.OrganizationID,
-	})
 }
 
 // handleRequestEmailVerification handles the email verification form submission
@@ -880,6 +675,16 @@ func (s *Server) handleConsent(c *fiber.Ctx) error {
 
 	slog.Debug("Stored email", "email", storedEmail)
 
+	// Store the company data in the registrations table
+	if err := s.db.CreateRegistration(authProcess.CertificateData, storedEmail); err != nil {
+		err = errl.Errorf("creating registration: %w", err)
+		slog.Error(err.Error(), "auth_code", authCode)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+
+	}
+
 	// Generate a random unique identifier for the SSO session
 	ssoSessionID := generateRandomString()
 
@@ -956,12 +761,13 @@ func (s *Server) generateSSOCookie(ssoSessionID string, certData *models.Certifi
 
 	// Generate SSO cookie
 	cookie := new(fiber.Cookie)
-	cookie.Name = "sso_certauth"
+	cookie.Name = "__Http-sso_certauth"
 	cookie.Value = token
-	cookie.Expires = time.Now().Add(24 * time.Hour)
+	// cookie.Expires = time.Now().Add(24 * time.Hour)
 	cookie.Secure = true
 	cookie.HTTPOnly = true
 	cookie.SameSite = "Lax"
+	cookie.SessionOnly = true
 
 	// Set the domain to the main domain so it's accessible by subdomains
 	u, err := url.Parse(s.cfg.CertAuthURL)
@@ -982,27 +788,4 @@ func (s *Server) generateSSOCookie(ssoSessionID string, certData *models.Certifi
 	}
 
 	return cookie, nil
-}
-
-// Start starts the server
-func (s *Server) Start(ctx context.Context) error {
-
-	addr := net.JoinHostPort("0.0.0.0", s.cfg.CertAuthPort)
-	slog.Info("Starting CertAuth server", "addr", addr)
-
-	// Start server in goroutine
-	errChan := make(chan error, 1)
-	go func() {
-		if err := s.app.Listen(addr); err != nil {
-			errChan <- fmt.Errorf("failed to start server: %w", err)
-		}
-	}()
-
-	// Wait for context cancellation or error
-	select {
-	case err := <-errChan:
-		return err
-	case <-ctx.Done():
-		return s.app.Shutdown()
-	}
 }

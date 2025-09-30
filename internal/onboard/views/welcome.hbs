@@ -27,7 +27,7 @@
     <div class="ui main text container">
         <div class="ui clearing segment">
             <h1 class="ui left floated header">
-                🎉 Welcome to ISBE Onboarding
+                Welcome to your ISBE private area
             </h1>
             <a href="/logout" class="ui right floated red button">
                 <i class="sign-out icon"></i> Logout
@@ -40,7 +40,7 @@
                 Authentication Successful!
             </div>
             <div class="ui list">
-                <div class="item"><strong>User ID:</strong> {{ .session.UserID }}</div>
+                <div class="item"><strong>User ID:</strong> {{ .subject.OrganizationIdentifier }}</div>
                 <div class="item"><strong>Session ID:</strong> {{ .session.SessionID }}</div>
                 <div class="item"><strong>Login Time:</strong> {{ .session.CreatedAt }}</div>
                 <div class="item"><strong>Last Accessed:</strong> {{ .session.LastAccessed }}</div>

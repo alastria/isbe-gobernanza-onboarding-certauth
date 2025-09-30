@@ -92,6 +92,7 @@ func (s *Service) GenerateIDToken(authCode *models.AuthProcess, certData *models
 	}
 	if certData.Subject.EmailAddress != "" {
 		claims["email"] = certData.Subject.EmailAddress
+		claims["email_verified"] = true
 	}
 
 	// Add custom elsi_ claims for ETSI standardized fields
@@ -123,13 +124,8 @@ func (s *Service) GenerateIDToken(authCode *models.AuthProcess, certData *models
 func (s *Service) GenerateAccessToken(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (*models.AccessToken, error) {
 	expiresIn := rp.TokenExpiry
 
-	// Generate random token string
-	tokenBytes := make([]byte, 32)
-	if _, err := rand.Read(tokenBytes); err != nil {
-		return nil, fmt.Errorf("failed to generate random token: %w", err)
-	}
-
-	tokenString := fmt.Sprintf("%x", tokenBytes)
+	// Generate a secure random string
+	tokenString := rand.Text()
 
 	// Create access token
 	accessToken := &models.AccessToken{

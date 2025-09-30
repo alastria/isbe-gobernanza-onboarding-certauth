@@ -9,6 +9,20 @@ import (
 
 // initializeTestData adds some test data if the database is empty
 func (d *Database) initializeTestData() error {
+
+	// Add Catalog as RP
+	catalogRP := &models.RelyingParty{
+		Name:        "ISBE Catalog",
+		Description: "The ISBE Catalog application",
+		ClientID:    "https://catalog.isbeonboard.com",
+		RedirectURL: "https://isbecatalog.netlify.app/",
+		OriginURL:   "https://isbecatalog.netlify.app/",
+		Scopes:      "openid eidas",
+		TokenExpiry: 3600,
+	}
+
+	d.CreateRelyingParty(catalogRP, "isbesecret")
+
 	// Check if we already have test data
 	var count int
 	err := d.db.QueryRow("SELECT COUNT(*) FROM relying_parties").Scan(&count)

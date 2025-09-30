@@ -1,8 +1,11 @@
 package certauth
 
 import (
+	"context"
 	"embed"
+	"fmt"
 	"log/slog"
+	"net"
 	"time"
 
 	"github.com/evidenceledger/certauth/internal/cache"
@@ -106,9 +109,6 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	s.app.Get(userinfo_endpoint, s.UserInfo)
 	s.app.Get("/logout", s.Logout)
 
-	// Certificate selection screen - shows before redirecting to CertSec
-	s.app.Get("/certificate-select", s.handleCertificateSelect)
-
 	// Certificate consent screen - shows after redirecting from CertSec
 	s.app.Get("/certificate-back", s.handleCertificateReceive)
 
@@ -150,4 +150,27 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	admin.Delete("/rp/:id", s.DeleteRP)
 
 	return s
+}
+
+// Start starts the server
+func (s *Server) Start(ctx context.Context) error {
+
+	addr := net.JoinHostPort("0.0.0.0", s.cfg.CertAuthPort)
+	slog.Info("Starting CertAuth server", "addr", addr)
+
+	// Start server in goroutine
+	errChan := make(chan error, 1)
+	go func() {
+		if err := s.app.Listen(addr); err != nil {
+			errChan <- fmt.Errorf("failed to start server: %w", err)
+		}
+	}()
+
+	// Wait for context cancellation or error
+	select {
+	case err := <-errChan:
+		return err
+	case <-ctx.Done():
+		return s.app.Shutdown()
+	}
 }

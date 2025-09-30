@@ -66,6 +66,14 @@ func (d *Database) createTables() error {
 			scope TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
+		`CREATE TABLE IF NOT EXISTS registrations (
+		    organization_identifier TEXT UNIQUE NOT NULL,
+			organization TEXT,
+			email TEXT,
+			country TEXT,
+			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+		)`,
 	}
 
 	for _, query := range queries {

@@ -1,4 +1,12 @@
 {
-   "editor.fontSize": 15,
-   "go.languageServerFlags": ["-mcp.listen=localhost:6969"]
+   "editor.fontSize": 14,
+   "go.languageServerFlags": [
+      "-mcp.listen=localhost:6969"
+   ],
+   "geminicodeassist.inlineSuggestions.nextEditPredictions": false,
+   "geminicodeassist.languages": [
+      "go"
+   ],
+   "geminicodeassist.updateChannel": "Insiders",
+   "geminicodeassist.chat.changeView": "Default diff view"
 }
