@@ -59,11 +59,11 @@ type SSOSession struct {
 
 // TokenRequest represents a token exchange request
 type TokenRequest struct {
-	GrantType   string `form:"grant_type"`
-	Code        string `form:"code"`
-	RedirectURI string `form:"redirect_uri"`
-	ClientID    string `form:"client_id"`
-	// ClientSecret string `form:"client_secret"`
+	GrantType    string `form:"grant_type"`
+	Code         string `form:"code"`
+	CodeVerifier string `form:"code_verifier"`
+	RedirectURI  string `form:"redirect_uri"`
+	ClientID     string `form:"client_id"`
 }
 
 // IDToken represents an OpenID Connect ID token

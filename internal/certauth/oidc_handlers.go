@@ -51,12 +51,12 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 
 	// Parse authorization request
 	authReq := &models.AuthorizationRequest{
-		ResponseType: c.Query("response_type"),
-		ClientID:     c.Query("client_id"),
-		RedirectURI:  c.Query("redirect_uri"),
-		Scope:        c.Query("scope"),
-		State:        c.Query("state"),
-		Nonce:        c.Query("nonce"),
+		ResponseType: utils.CopyString(c.Query("response_type")),
+		ClientID:     utils.CopyString(c.Query("client_id")),
+		RedirectURI:  utils.CopyString(c.Query("redirect_uri")),
+		Scope:        utils.CopyString(c.Query("scope")),
+		State:        utils.CopyString(c.Query("state")),
+		Nonce:        utils.CopyString(c.Query("nonce")),
 		CreatedAt:    time.Now(),
 	}
 
@@ -227,13 +227,6 @@ func (s *Server) handleCertificateReceive(c *fiber.Ctx) error {
 // handleTokenExchange handles OAuth2 token endpoint.
 // This is the last step for the RP in the authentication flow.
 func (s *Server) handleTokenExchange(c *fiber.Ctx) error {
-	slog.Info("Token request received")
-
-	// We reject immediately RPs which are not authorized
-	username, err := s.validateTokenAuthorization(c)
-	if err != nil {
-		return errl.Errorf("invalid authorization: %w", err)
-	}
 
 	// Parse token request
 	var tokenReq models.TokenRequest
@@ -241,8 +234,18 @@ func (s *Server) handleTokenExchange(c *fiber.Ctx) error {
 		return errl.Errorf("invalid request body: %w", err)
 	}
 
-	// Set the user name in tokenReq
-	tokenReq.ClientID = username
+	slog.Info("Token request received", "client_id", tokenReq.ClientID, "grant_type", tokenReq.GrantType, "code", tokenReq.Code, "code_verifier", tokenReq.CodeVerifier, "redirect_uri", tokenReq.RedirectURI)
+
+	if tokenReq.ClientID == "" {
+		// We reject immediately RPs which are not authorized
+		username, err := s.validateTokenAuthorization(c)
+		if err != nil {
+			return errl.Errorf("invalid authorization: %w", err)
+		}
+
+		// Set the user name in tokenReq
+		tokenReq.ClientID = username
+	}
 
 	// Retrieve the AuthorizationRequest associated with the authCode
 	authCodeIntf, _ := s.cache.Get(tokenReq.Code)
