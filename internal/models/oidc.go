@@ -78,8 +78,8 @@ type IDToken struct {
 	CustomClaims    map[string]any `json:"custom_claims"`
 }
 
-// AccessToken represents an OAuth2 access token
-type AccessToken struct {
+// TokenResponse represents an OAuth2 response to the token endpoint
+type TokenResponse struct {
 	AccessToken string         `json:"access_token"`
 	TokenType   string         `json:"token_type"`
 	ExpiresIn   int            `json:"expires_in"`

@@ -160,7 +160,7 @@ func (s *Server) generateTestTokens(c *fiber.Ctx, certData *models.CertificateDa
 	}
 
 	// Generate access token
-	accessToken, err := s.jwtService.GenerateAccessToken(testAuthCode, certData, testRP)
+	accessToken, err := s.jwtService.GenerateTokenResponse(testAuthCode, certData, testRP)
 	if err != nil {
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": "Failed to generate access token",

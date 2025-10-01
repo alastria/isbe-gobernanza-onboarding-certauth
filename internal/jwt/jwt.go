@@ -120,15 +120,18 @@ func (s *Service) GenerateIDToken(authCode *models.AuthProcess, certData *models
 	return tokenString, nil
 }
 
-// GenerateAccessToken generates an OAuth2 access token
-func (s *Service) GenerateAccessToken(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (*models.AccessToken, error) {
+// GenerateTokenResponse generates an OAuth2 response to the token endpoint
+func (s *Service) GenerateTokenResponse(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (*models.TokenResponse, error) {
 	expiresIn := rp.TokenExpiry
 
 	// Generate a secure random string
-	tokenString := rand.Text()
+	tokenString, err := s.GenerateAccessToken(authCode, certData, rp)
+	if err != nil {
+		return nil, errl.Errorf("failed to generate access token: %w", err)
+	}
 
 	// Create access token
-	accessToken := &models.AccessToken{
+	accessToken := &models.TokenResponse{
 		AccessToken: tokenString,
 		TokenType:   "Bearer",
 		ExpiresIn:   expiresIn,

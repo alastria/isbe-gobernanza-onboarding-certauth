@@ -438,7 +438,7 @@ func (s *Server) generateTokens(authProcess *models.AuthProcess, rp *models.Rely
 	}
 
 	// Generate access token
-	accessToken, err := s.jwtService.GenerateAccessToken(authProcess, certData, rp)
+	accessToken, err := s.jwtService.GenerateTokenResponse(authProcess, certData, rp)
 	if err != nil {
 		return nil, errl.Errorf("failed to generate access token: %w", err)
 	}

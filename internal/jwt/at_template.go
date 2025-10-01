@@ -1,5 +1,14 @@
 package jwt
 
+import (
+	"crypto/rand"
+	"fmt"
+	"time"
+
+	"github.com/evidenceledger/certauth/internal/models"
+	"github.com/golang-jwt/jwt/v5"
+)
+
 const at_template = `{
   "aud": "did:key:zDnaeypyWjzn54GuUP7PmDXiiggCyiG7ksMF7Unm7kjtEKBez",
   "sub": "did:key:zDnaejCht7VjsEWSkCLjzGwdwJLhukNCLAaXJ5kfsu8fihRSh",
@@ -79,3 +88,118 @@ const at_template = `{
   "jti": "9710a4ee-2829-4b8a-a038-aa19ffcd3282",
   "client_id": "https://verifier.dome-marketplace-sbx.org"
 }`
+
+func (s *Service) GenerateAccessToken(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
+	now := time.Now()
+
+	iss := s.issuer
+	sub := authCode.ClientID
+	aud := rp.ClientID
+	exp := now.Add(time.Duration(rp.TokenExpiry) * time.Second).Unix()
+	iat := now.Unix()
+	nonce := authCode.Nonce
+	scope := authCode.Scope
+	jti := rand.Text()
+
+	// Standard claims
+	claims := jwt.MapClaims{
+		"iss":   iss,
+		"sub":   sub,
+		"aud":   aud,
+		"exp":   exp,
+		"iat":   iat,
+		"nonce": nonce,
+		"scope": scope,
+		"jti":   jti,
+	}
+
+	// Mandatee claims
+	mandatee := map[string]any{
+		"id":         certData.Subject.SerialNumber,
+		"employeeId": certData.Subject.SerialNumber,
+		"email":      authCode.Email,
+		"firstName":  certData.Subject.GivenName,
+		"lastName":   certData.Subject.Surname,
+	}
+
+	mandator := map[string]any{
+		"id":                     "did:elsi:" + certData.Subject.OrganizationIdentifier,
+		"email":                  authCode.Email,
+		"commonName":             certData.Subject.CommonName,
+		"organization":           certData.Subject.Organization,
+		"organizationIdentifier": certData.Subject.OrganizationIdentifier,
+		"serialNumber":           certData.Subject.SerialNumber,
+		"country":                certData.Subject.Country,
+	}
+
+	power := []map[string]any{
+		{
+			"action":   []string{"Execute"},
+			"domain":   "DOME",
+			"function": "Onboarding",
+			"type":     "domain",
+		},
+		{
+			"action":   []string{"Create", "Update", "Delete"},
+			"domain":   "DOME",
+			"function": "ProductOffering",
+			"type":     "domain",
+		},
+	}
+
+	mandate := map[string]any{
+		"mandatee": mandatee,
+		"mandator": mandator,
+		"power":    power,
+	}
+
+	vcID := "urn:uuid" + rand.Text()
+
+	// Verifiable Credential
+	vc := map[string]any{
+		"id": vcID,
+		"@context": []string{
+			"https://www.w3.org/ns/credentials/",
+			"https://credentials.eudistack.eu/.well-known/credentials/lear_credential_employee/w3c/v3",
+		},
+		"type": []string{
+			"LEARCredentialEmployee",
+			"VerifiableCredential",
+		},
+		"validFrom":  certData.ValidFrom.Format(time.RFC3339),
+		"validUntil": certData.ValidTo.Format(time.RFC3339),
+
+		"credentialStatus": map[string]any{
+			"id":                   "https://issuer.dome-marketplace-sbx.org/backoffice/v1/credentials/status/1#SYC908RIQQqeUXR19nh3EQ",
+			"statusListCredential": "https://issuer.dome-marketplace-sbx.org/backoffice/v1/credentials/status/1",
+			"statusListIndex":      "SYC908RIQQqeUXR19nh3EQ",
+			"statusPurpose":        "revocation",
+			"type":                 "PlainListEntity",
+		},
+		"credentialSubject": map[string]any{
+			"mandate": mandate,
+		},
+		"description": "Verifiable Credential for employees of an organization",
+		"issuer": map[string]any{
+			"commonName":             "CertAuth Identity Provider for ISBE",
+			"country":                "ES",
+			"id":                     "did:elsi:VATES-B60645900",
+			"organization":           "IN2",
+			"organizationIdentifier": "VATES-B60645900",
+			"serialNumber":           "B47447560",
+		},
+	}
+
+	claims["vc"] = vc
+
+	// Create token
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+
+	// Sign token
+	tokenString, err := token.SignedString(s.privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign ID token: %w", err)
+	}
+
+	return tokenString, nil
+}
