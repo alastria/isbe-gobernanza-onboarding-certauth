@@ -243,6 +243,7 @@ func (s *Server) handleTokenExchange(c *fiber.Ctx) error {
 			return errl.Errorf("invalid authorization: %w", err)
 		}
 
+		slog.Info("Client ID retrieved from Authorization header", "client_id", username)
 		// Set the user name in tokenReq
 		tokenReq.ClientID = username
 	}
