@@ -77,6 +77,8 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 		Expiration: 5 * time.Minute,
 	}))
 
+	app.Static("/static", "./internal/certauth/views/assets")
+
 	// Initialize JWT service
 	jwtService, err := jwt.NewService(cfg.CertAuthURL)
 	if err != nil {

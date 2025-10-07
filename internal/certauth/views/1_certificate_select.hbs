@@ -3,26 +3,172 @@
 
 <head>
     <title>Certificate Selection Required</title>
-    {{template "partials/fomantic"}}
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body {
+            font-family: 'Roboto', sans-serif;
+            margin: 0;
+            background-color: #f2f2f2;
+            color: #333;
+        }
+
+        .header {
+            background-color: #f9f3e7;
+            padding: 20px 40px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 24px;
+        }
+
+        .main.container {
+            padding: 40px;
+            background-color: #f9f3e7;
+        }
+
+        .content-box {
+            background-color: white;
+            padding: 40px;
+            border-radius: 8px;
+            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
+        }
+
+        .message {
+            background-color: #f8f8f8;
+            border-left: 4px solid #fbbd08;
+            padding: 20px;
+            margin-bottom: 20px;
+        }
+
+        .message .header {
+            font-weight: bold;
+            margin-bottom: 5px;
+        }
+
+        .button {
+            background-color: #db4437;
+            color: white;
+            padding: 15px 30px;
+            border: none;
+            border-radius: 4px;
+            font-size: 16px;
+            cursor: pointer;
+            transition: background-color 0.3s;
+        }
+
+        .button:hover {
+            background-color: #c53727;
+        }
+
+        .divider {
+            border-top: 1px solid #ddd;
+            margin: 30px 0;
+        }
+    </style>
+
+    <style>
+        .logo-bar {
+            padding: 1rem 1.875rem;
+            background-color: #ffffff;
+        }
+
+        .logo-bar ul {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 1rem;
+            list-style: none;
+            margin: 0;
+            padding: 0;
+        }
+
+        .logo-bar picture,
+        .logo-bar img {
+            height: 1.25rem;
+            width: auto;
+            flex-shrink: 0;
+        }
+
+        /* Responsive adjustments */
+        @media (min-width: 640px) {
+            .logo-bar {
+                padding-top: 1.875rem;
+                padding-bottom: 1.875rem;
+            }
+
+            .logo-bar ul {
+                column-gap: 1.875rem;
+            }
+        }
+
+        @media (min-width: 768px) {
+            .logo-bar ul {
+                column-gap: 2.5rem;
+            }
+        }
+
+        @media (min-width: 1024px) {
+
+            .logo-bar picture,
+            .logo-bar img {
+                height: 1.875rem;
+            }
+        }
+    </style>
 </head>
 
 <body>
-    <div class="ui main text container">
-        <div class="ui raised very padded segment">
-            <h1 class="ui header">
-                <i class="id card outline icon"></i>
-                <div class="content">
-                    Register or Login with eIDAS Certificate
-                    <div class="sub header">Certificate Selection Required</div>
-                </div>
-            </h1>
-            <div class="ui yellow icon message">
-                <i class="info circle icon"></i>
-                <div class="content">
-                    <div class="header">Note</div>
-                    Clicking the button below will redirect you to a secure domain where your browser will prompt you to
-                    select a certificate from your certificate store.
-                </div>
+
+    <div class="logo-bar">
+        <ul>
+            <li>
+                <picture>
+                    <img src="/static/images/nextgeneration.png"
+                        alt="nextgeneration" width="220" height="53" loading="lazy" />
+                </picture>
+            </li>
+            <li>
+                <picture>
+                    <img src="/static/images/gobierno.png"
+                        alt="gobierno" width="308" height="53" loading="lazy" />
+                </picture>
+            </li>
+            <li>
+                <picture>
+                    <img src="/static/images/plan.png"
+                        alt="plan" width="161" height="53" loading="lazy" />
+                </picture>
+            </li>
+            <li>
+                <picture>
+                    <img src="/static/images/cam.png"
+                        alt="cam" width="190" height="59" loading="lazy" />
+                </picture>
+            </li>
+            <li>
+                <picture>
+                    <img src="/static/images/alastria.png"
+                        alt="alastria" width="282" height="59" loading="lazy" />
+                </picture>
+            </li>
+        </ul>
+    </div>
+
+    <div class="header">
+        <h1>Register or Login with eIDAS Certificate</h1>
+    </div>
+
+    <div class="main container">
+        <div class="content-box">
+            <h2>Certificate Selection Required</h2>
+            <div class="message">
+                <div class="header">Note</div>
+                <p>Clicking the button below will redirect you to a secure domain where your browser will prompt you to
+                    select a certificate from your certificate store.</p>
             </div>
             <p>
                 You can register or login with you eIDAS certificate.
@@ -34,10 +180,9 @@
             <p>
                 If you have registered or logged in recently you will be taken directly to your private area.
             </p>
-            <div class="ui divider"></div>
+            <div class="divider"></div>
             <p>Click the button below to proceed with certificate selection:</p>
-            <button class="ui blue large button" onclick="proceedWithCertificate()">
-                <i class="certificate icon"></i>
+            <button class="button" onclick="proceedWithCertificate()">
                 Proceed with Certificate
             </button>
         </div>

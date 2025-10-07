@@ -1,4 +1,4 @@
-package server
+package onboardserver
 
 import (
 	"context"
@@ -65,8 +65,8 @@ func New(adminPassword string, cfg Config) *Server {
 	clientid := "isbeonboard"
 	clientsecret := "isbesecret"
 	if cfg.Development {
-		clientid = "example-rp"
-		clientsecret = "example-secret"
+		clientid = "testonboard"
+		clientsecret = "isbesecret"
 	}
 	erp := onboard.New(cfg.OnboardPort, cfg.OnboardURL, cfg.CertAuthURL, clientid, clientsecret)
 
@@ -81,7 +81,7 @@ func New(adminPassword string, cfg Config) *Server {
 
 }
 
-// Start starts both servers
+// Start starts both servers: CertAuth and CertSec. Also it starts (for the moment) the demo RP server
 func (s *Server) Start(ctx context.Context) error {
 	// Initialize database
 	if err := s.db.Initialize(); err != nil {
@@ -133,6 +133,7 @@ func (s *Server) Start(ctx context.Context) error {
 		return err
 	case <-ctx.Done():
 		slog.Info("Shutting down servers")
+		s.db.Close()
 		return nil
 	}
 }
