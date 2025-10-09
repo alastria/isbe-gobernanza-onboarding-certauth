@@ -1,4 +1,4 @@
-package onboardserver
+package mainserver
 
 import (
 	"context"

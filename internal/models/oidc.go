@@ -47,6 +47,9 @@ type AuthProcess struct {
 	EmailVerificationCode string           `json:"email_verification_code,omitempty"`
 	EmailVerified         bool             `json:"email_verified,omitempty"`
 	ConsentGiven          bool             `json:"consent_given,omitempty"`
+	WalletAuthRequest     string           `json:"wallet_auth_request,omitempty"`
+	CredentialData        map[string]any   `json:"credential_data,omitempty"`
+	FinishedWalletAuth    bool             `json:"finished_wallet_auth,omitempty"`
 }
 
 // SSOSession represents a single sign-on session, stored in-memory in the server
@@ -85,6 +88,7 @@ type TokenResponse struct {
 	ExpiresIn   int            `json:"expires_in"`
 	Scope       string         `json:"scope"`
 	Claims      map[string]any `json:"claims"`
+	IdToken     string         `json:"id_token,omitempty"`
 }
 
 // RPSession represents a user session in the example RP

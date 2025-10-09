@@ -1,4 +1,4 @@
-package jwt
+package jwtservice
 
 import (
 	"crypto/rand"
@@ -89,7 +89,7 @@ const at_template = `{
   "client_id": "https://verifier.dome-marketplace-sbx.org"
 }`
 
-func (s *Service) GenerateAccessToken(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
+func (s *JWTService) GenerateAccessTokenForCert(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
 	now := time.Now()
 
 	iss := s.issuer
@@ -191,6 +191,44 @@ func (s *Service) GenerateAccessToken(authCode *models.AuthProcess, certData *mo
 	}
 
 	claims["vc"] = vc
+
+	// Create token
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+
+	// Sign token
+	tokenString, err := token.SignedString(s.privateKey)
+	if err != nil {
+		return "", fmt.Errorf("failed to sign ID token: %w", err)
+	}
+
+	return tokenString, nil
+}
+
+func (s *JWTService) GenerateAccessTokenForCredential(authCode *models.AuthProcess, cred map[string]any, rp *models.RelyingParty) (string, error) {
+	now := time.Now()
+
+	iss := s.issuer
+	sub := authCode.ClientID
+	aud := rp.ClientID
+	exp := now.Add(time.Duration(rp.TokenExpiry) * time.Second).Unix()
+	iat := now.Unix()
+	nonce := authCode.Nonce
+	scope := authCode.Scope
+	jti := rand.Text()
+
+	// Standard claims
+	claims := jwt.MapClaims{
+		"iss":   iss,
+		"sub":   sub,
+		"aud":   aud,
+		"exp":   exp,
+		"iat":   iat,
+		"nonce": nonce,
+		"scope": scope,
+		"jti":   jti,
+	}
+
+	claims["vc"] = cred
 
 	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)

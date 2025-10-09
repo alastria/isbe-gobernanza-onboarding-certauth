@@ -1,4 +1,4 @@
-package examplerp
+package onboard
 
 import (
 	"context"

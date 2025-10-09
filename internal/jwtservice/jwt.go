@@ -1,4 +1,4 @@
-package jwt
+package jwtservice
 
 import (
 	"crypto/ecdsa"
@@ -12,39 +12,43 @@ import (
 	"time"
 
 	"github.com/evidenceledger/certauth/internal/errl"
+	"github.com/evidenceledger/certauth/internal/jpath"
 	"github.com/evidenceledger/certauth/internal/models"
 	"github.com/golang-jwt/jwt/v5"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
 
-// Service handles JWT token generation
-type Service struct {
+// JWTService handles JWT token generation
+type JWTService struct {
 	privateKey *ecdsa.PrivateKey
 	publicKey  *ecdsa.PublicKey
 	issuer     string
 }
 
 // NewService creates a new JWT service
-func NewService(issuer string) (*Service, error) {
+func NewService(issuer string) (*JWTService, error) {
 	// Generate EC key pair for token signing
+	// This is efemeral and only valid while the server is up.
+	// This is on purpose, as it should be used only to sign short-lived access tokens
+	// If the server fails during an authentication process, the process has to be started from the beginning
 	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
 	if err != nil {
-		return nil, fmt.Errorf("failed to generate EC key: %w", err)
+		return nil, errl.Errorf("failed to generate EC key: %w", err)
 	}
 
 	publicKey := &privateKey.PublicKey
 
 	slog.Info("JWT service initialized", "issuer", issuer)
-	return &Service{
+	return &JWTService{
 		privateKey: privateKey,
 		publicKey:  publicKey,
 		issuer:     issuer,
 	}, nil
 }
 
-// GenerateIDToken generates an OpenID Connect ID token
-func (s *Service) GenerateIDToken(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
+// GenerateIDTokenForCert generates an OpenID Connect ID token
+func (s *JWTService) GenerateIDTokenForCert(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
 	now := time.Now()
 
 	// Determine the sub identifier based on certificate type
@@ -79,7 +83,7 @@ func (s *Service) GenerateIDToken(authCode *models.AuthProcess, certData *models
 
 	// Add standard claims from certificate if available
 	if certData.Subject.Organization != "" {
-		claims["name"] = certData.Subject.CommonName
+		claims["name"] = certData.Subject.Organization
 	} else if certData.Subject.CommonName != "" {
 		claims["name"] = certData.Subject.CommonName
 	}
@@ -108,7 +112,7 @@ func (s *Service) GenerateIDToken(authCode *models.AuthProcess, certData *models
 	// Sign token
 	tokenString, err := token.SignedString(s.privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign ID token: %w", err)
+		return "", errl.Errorf("failed to sign ID token: %w", err)
 	}
 
 	slog.Debug("ID token generated",
@@ -120,35 +124,74 @@ func (s *Service) GenerateIDToken(authCode *models.AuthProcess, certData *models
 	return tokenString, nil
 }
 
-// GenerateTokenResponse generates an OAuth2 response to the token endpoint
-func (s *Service) GenerateTokenResponse(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (*models.TokenResponse, error) {
-	expiresIn := rp.TokenExpiry
+func (s *JWTService) GenerateIDTokenForCredential(authCode *models.AuthProcess, cred map[string]any, rp *models.RelyingParty) (string, error) {
+	now := time.Now()
 
-	// Generate a secure random string
-	tokenString, err := s.GenerateAccessToken(authCode, certData, rp)
+	mandator := jpath.GetMap(cred, "credentialSubject.mandate.mandator")
+	if len(mandator) == 0 {
+		return "", errl.Errorf("mandator not found in credential")
+	}
+
+	mandatee := jpath.GetMap(cred, "credentialSubject.mandate.mandatee")
+	if len(mandator) == 0 {
+		return "", errl.Errorf("mandatee not found in credential")
+	}
+
+	// Subject is the organization identifier of the Mandator
+	sub := jpath.GetString(mandator, "organizationIdentifier")
+	if sub == "" {
+		return "", errl.Errorf("organizationIdentifier not found in credential")
+	}
+
+	// Standard OIDC claims
+	claims := jwt.MapClaims{
+		// Standard claims
+		"iss":   s.issuer,                                                    // Issuer
+		"sub":   sub,                                                         // Subject (org ID or personal identifier)
+		"aud":   rp.ClientID,                                                 // Audience
+		"exp":   now.Add(time.Duration(rp.TokenExpiry) * time.Second).Unix(), // Expiration
+		"iat":   now.Unix(),                                                  // Issued at
+		"nonce": authCode.Nonce,                                              // Nonce (if provided)
+	}
+
+	claims["name"] = jpath.GetString(mandator, "organization")
+
+	claims["given_name"] = jpath.GetString(mandatee, "firstName")
+	claims["family_name"] = jpath.GetString(mandatee, "lastName")
+
+	email := jpath.GetString(mandatee, "email")
+	if email != "" {
+		claims["email"] = email
+		claims["email_verified"] = true
+	} else {
+		email = jpath.GetString(mandator, "emailAddress")
+		if email != "" {
+
+			claims["email"] = email
+			claims["email_verified"] = true
+		}
+	}
+
+	// Create token
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+
+	// Sign token
+	tokenString, err := token.SignedString(s.privateKey)
 	if err != nil {
-		return nil, errl.Errorf("failed to generate access token: %w", err)
+		return "", errl.Errorf("failed to sign ID token: %w", err)
 	}
 
-	// Create access token
-	accessToken := &models.TokenResponse{
-		AccessToken: tokenString,
-		TokenType:   "Bearer",
-		ExpiresIn:   expiresIn,
-		Scope:       authCode.Scope,
-		Claims:      s.generateELSIClaims(certData), // Same claims as ID token
-	}
-
-	slog.Debug("Access token generated",
-		"subject", certData.Subject.OrganizationIdentifier,
-		"expires_in", expiresIn,
+	slog.Debug("ID token generated",
+		"subject", claims["sub"],
+		"audience", claims["aud"],
+		"expiration", claims["exp"],
 	)
 
-	return accessToken, nil
+	return tokenString, nil
 }
 
 // generateELSIClaims generates custom elsi_ claims for ETSI standardized fields
-func (s *Service) generateELSIClaims(certData *models.CertificateData) map[string]any {
+func (s *JWTService) generateELSIClaims(certData *models.CertificateData) map[string]any {
 	claims := make(map[string]any)
 
 	// Map certificate fields to elsi_ claims
@@ -189,10 +232,10 @@ func (s *Service) generateELSIClaims(certData *models.CertificateData) map[strin
 }
 
 // GetPublicKey returns the public key in PEM format for JWKS
-func (s *Service) GetPublicKey() (string, error) {
+func (s *JWTService) GetPublicKey() (string, error) {
 	pubKeyBytes, err := x509.MarshalPKIXPublicKey(s.publicKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to marshal public key: %w", err)
+		return "", errl.Errorf("failed to marshal public key: %w", err)
 	}
 
 	pemBlock := &pem.Block{
@@ -204,7 +247,7 @@ func (s *Service) GetPublicKey() (string, error) {
 }
 
 // GetJWKS returns the JSON Web Key Set
-func (s *Service) GetJWKS() map[string]any {
+func (s *JWTService) GetJWKS() map[string]any {
 
 	jk, err := jwk.Import(s.publicKey)
 	if err != nil {
@@ -222,26 +265,41 @@ func (s *Service) GetJWKS() map[string]any {
 }
 
 // GenerateSSOCookieToken generates a JWT token for the SSO cookie
-func (s *Service) GenerateSSOCookieToken(claims jwt.MapClaims) (string, error) {
+func (s *JWTService) GenerateSSOCookieToken(claims jwt.MapClaims) (string, error) {
 	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 
 	// Sign token
 	tokenString, err := token.SignedString(s.privateKey)
 	if err != nil {
-		return "", fmt.Errorf("failed to sign sso token: %w", err)
+		return "", errl.Errorf("failed to sign sso token: %w", err)
+	}
+
+	return tokenString, nil
+}
+
+func (s *JWTService) GenerateToken(header map[string]any, claims jwt.Claims) (string, error) {
+	// Create token
+	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
+
+	maps.Copy(token.Header, header)
+
+	// Sign token
+	tokenString, err := token.SignedString(s.privateKey)
+	if err != nil {
+		return "", errl.Errorf("failed to sign token: %w", err)
 	}
 
 	return tokenString, nil
 }
 
 // Issuer returns the issuer of the JWT
-func (s *Service) Issuer() string {
+func (s *JWTService) Issuer() string {
 	return s.issuer
 }
 
 // ParseSSOCookieToken parses a JWT token from the SSO cookie
-func (s *Service) ParseSSOCookieToken(tokenString string) (jwt.MapClaims, error) {
+func (s *JWTService) ParseSSOCookieToken(tokenString string) (jwt.MapClaims, error) {
 	if tokenString == "" {
 		return nil, errl.Errorf("empty sso token")
 	}
@@ -250,19 +308,19 @@ func (s *Service) ParseSSOCookieToken(tokenString string) (jwt.MapClaims, error)
 	token, err := jwt.Parse(tokenString, func(token *jwt.Token) (any, error) {
 		// Don't forget to validate the alg is what you expect:
 		if _, ok := token.Method.(*jwt.SigningMethodECDSA); !ok {
-			return nil, fmt.Errorf("unexpected signing method: %v", token.Header["alg"])
+			return nil, errl.Errorf("unexpected signing method: %v", token.Header["alg"])
 		}
 
 		return s.publicKey, nil
 	})
 
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse sso token: %w", err)
+		return nil, errl.Errorf("failed to parse sso token: %w", err)
 	}
 
 	if claims, ok := token.Claims.(jwt.MapClaims); ok && token.Valid {
 		return claims, nil
 	}
 
-	return nil, fmt.Errorf("invalid sso token")
+	return nil, errl.Errorf("invalid sso token")
 }
