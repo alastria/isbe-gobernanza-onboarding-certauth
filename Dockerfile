@@ -23,6 +23,8 @@ FROM alpine/curl:latest
 WORKDIR /
 COPY --from=builder /certauth /certauth
 RUN chmod +x /certauth
+COPY --from=builder /app/internal/certauth/views /internal/certauth/views
+COPY --from=builder /app/internal/onboard/views /internal/onboard/views
 
 # Expose the port the server runs on
 EXPOSE 8090
