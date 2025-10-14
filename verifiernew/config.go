@@ -29,7 +29,7 @@ var defaultConfig = Config{
 	ListenAddress:          ":9998",
 	VerifierURL:            "https://verifier.mycredential.eu",
 	AuthnPolicies:          "authn_policies.star",
-	SamedeviceWallet:       "https://wallet.mycredential.eu",
+	SamedeviceWallet:       "https://eudiwallet.mycredential.eu",
 	CredentialTemplatesDir: "data/credential_templates",
 }
 
