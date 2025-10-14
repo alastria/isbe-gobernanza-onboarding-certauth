@@ -12,13 +12,12 @@ import (
 	"github.com/evidenceledger/certauth/internal/certconfig"
 	"github.com/evidenceledger/certauth/internal/database"
 	"github.com/evidenceledger/certauth/internal/html"
-	"github.com/evidenceledger/certauth/internal/jwt"
+	"github.com/evidenceledger/certauth/internal/jwtservice"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/basicauth"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
 	"github.com/gofiber/fiber/v2/middleware/helmet"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 )
@@ -28,7 +27,7 @@ type Server struct {
 	cfg        certconfig.Config
 	app        *fiber.App
 	db         *database.Database
-	jwtService *jwt.Service
+	jwtService *jwtservice.JWTService
 	html       *html.RendererFiber
 	cache      *cache.Cache
 }
@@ -71,16 +70,16 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	// Enable CORS for all origins
 	app.Use(cors.New())
 
-	// Limit repeat requests to our APIs
-	app.Use(limiter.New(limiter.Config{
-		Max:        20,
-		Expiration: 5 * time.Minute,
-	}))
+	// // Limit repeat requests to our APIs
+	// app.Use(limiter.New(limiter.Config{
+	// 	Max:        20,
+	// 	Expiration: 5 * time.Minute,
+	// }))
 
 	app.Static("/static", "./internal/certauth/views/assets")
 
 	// Initialize JWT service
-	jwtService, err := jwt.NewService(cfg.CertAuthURL)
+	jwtService, err := jwtservice.NewService(cfg.CertAuthURL)
 	if err != nil {
 		slog.Error("Failed to initialize JWT service", "error", err)
 		panic(err)
@@ -101,6 +100,10 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 		return c.JSON(fiber.Map{"status": "healthy", "hostname": c.Hostname()})
 	})
 
+	// *******************************************************
+	// *******************************************************
+	// OIDC endpoints to support Relying Parties
+
 	// OIDC Discovery endpoints
 	s.app.Get(oidc_configuration, s.handleDiscovery)
 	s.app.Get(jwks_uri, s.handleJWKS)
@@ -110,6 +113,31 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	s.app.Post(token_endpoint, s.handleTokenExchange)
 	s.app.Get(userinfo_endpoint, s.UserInfo)
 	s.app.Get("/logout", s.Logout)
+
+	// *******************************************************
+	// *******************************************************
+	// The main landing page
+	s.app.Get("/login", s.LoginPage)
+
+	// *******************************************************
+	// *******************************************************
+	// Endpoints for OIDVP with the Wallet
+
+	// The page with the QR code to login with the Wallet
+	s.app.Get("/wallet/login", s.WalletLoginPage)
+
+	// The JavaScript in the Login page polls the backend to see when the Wallet has sent the
+	// Authentication Response, to know when to continue.
+	s.app.Get("/wallet/poll", s.APIWalletPoll)
+
+	s.app.Get("/wallet/authenticationrequest", s.APIWalletAuthenticationRequest)
+	s.app.Post("/wallet/authenticationresponse", s.APIWalletAuthenticationResponse)
+
+	// *******************************************************
+	// *******************************************************
+	// eIDAS certificate endpoints
+
+	s.app.Get("/cert/login", s.CertLoginPage)
 
 	// Certificate consent screen - shows after redirecting from CertSec
 	s.app.Get("/certificate-back", s.handleCertificateReceive)
@@ -123,13 +151,9 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	// Handle consent received, generation of SSO cookie and redirection to Relying Party
 	s.app.Post("/consent", s.handleConsent)
 
-	// Test callback endpoint for testing the complete flow
-	s.app.Get("/callback", s.handleTestCallback)
-
-	// Test endpoints for JWT token generation
-	s.app.Post("/test/token", s.handleTestToken)
-	s.app.Post("/test/token/personal", s.handleTestPersonalToken)
-	s.app.Get("/test/callback", s.handleTestCallback)
+	// *******************************************************
+	// *******************************************************
+	// Admin endpoints
 
 	// Admin routes (protected)
 	admin := s.app.Group("/admin")

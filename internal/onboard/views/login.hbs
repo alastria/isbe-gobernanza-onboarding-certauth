@@ -1,73 +1,40 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-
-    <title>ISBE Onboarding - Register or Login</title>
-    <style>
-        body {
-            font-family: Arial, sans-serif;
-            margin: 40px;
-            background-color: #f5f5f5;
-        }
-
-        .container {
-            max-width: 800px;
-            margin: 0 auto;
-            background: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .button {
-            background: #007cba;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 4px;
-            cursor: pointer;
-            font-size: 16px;
-            text-decoration: none;
-            display: inline-block;
-        }
-
-        .button:hover {
-            background: #005a87;
-        }
-
-        .header {
-            text-align: center;
-            margin-bottom: 30px;
-        }
-
-        .description {
-            text-align: center;
-            color: #666;
-            margin-bottom: 30px;
-        }
-    </style>
-</head>
+{{template "partials/preamble"}}
 
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>ISBE Onboarding</h1>
-        </div>
-        <div class="description">
-            <p>This is a placeholder for the landing page of onboarding in ISBE.</p>
-            <p>
-                The final design will explain the whole process to users.
-            </p>
-            <p>
-                To continue, you need to register or login with your eIDAS certificate. 
-                Click the button below.</p>
-        </div>
-        <div style="text-align: center;">
-            <a href="/login" class="button">Register or Login with Certificate</a>
-        </div>
-    </div>
-</body>
+    {{template "partials/logobar"}}
 
-</html>
+    <div class="ui hidden divider"></div>
+
+    <div class="ui container" style="max-width: 800px;">
+
+        <div class="ui huge header">Bienvenido a ISBE</div>
+
+        <h3 class="ui header">¿Qué es lo que deseas hacer?</h3>
+
+        <div class="ui hidden divider"></div>
+
+        <div class="ui grid">
+            <a class="eight wide column" href="/register">
+                <div class="ui raised segment" style="background-color:#ff7e5680;">
+                    <h4 class="ui header">Registrarme en ISBE</h4>
+                    <p style="color:black">Antes de poder usar todos los servicios de ISBE, debes registrar a tu organización.
+                        Es un proceso sencillo, que solo necesita de un certificado de representante.
+                    </p>
+                    <p style="color:black">Haz click aquí para iniciar el proceso.</p>
+                </div>
+            </a>
+            <a class="eight wide column" href="/login">
+                <div class="ui raised segment" style="background-color:#ff7e5680;">
+                    <h4 class="ui header">Entrar en mi área privada</h4>
+                    <p style="color:black">Si ya te has registrado, puedes entrar a tu áera privada para disfrutar de todos los servicios disponibles.
+                    </p>
+                    <p style="color:black">Haz click aquí para entrar.</p>
+                </div>
+            </a>
+        </div>
+
+    </div>
+
+    <script src="https://cdn.jsdelivr.net/npm/fomantic-ui@2.9.3/dist/semantic.min.js"></script>
+</body>
+{{template "partials/postamble"}}

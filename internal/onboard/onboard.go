@@ -1,4 +1,4 @@
-package examplerp
+package onboard
 
 import (
 	"context"
@@ -71,10 +71,18 @@ func New(internalPort, ourURL, providerURL, clientID, clientSecret string) *Serv
 
 // Start starts the application server
 func (s *Server) Start() error {
+
 	http.HandleFunc("/", s.handleHome)
 	http.HandleFunc("/login", s.handleLogin)
+	http.HandleFunc("/register", s.handleRegister)
 	http.HandleFunc("/callback", s.handleCallback)
 	http.HandleFunc("/logout", s.handleLogout)
+
+	// Serve files from the "static" directory
+	fileServer := http.FileServer(http.Dir("./internal/onboard/views/assets"))
+
+	// Handle requests with "/static/" prefix
+	http.Handle("/static/", http.StripPrefix("/static", fileServer))
 
 	ctx := context.Background()
 
@@ -165,6 +173,30 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
 
+func (s *Server) handleRegister(w http.ResponseWriter, r *http.Request) {
+	// Generate state for CSRF protection
+	state := s.generateRandomString(32)
+
+	// Generate nonce for replay protection
+	nonce := s.generateRandomString(32)
+
+	// Store state in session (in a real app, you'd use proper session management)
+	http.SetCookie(w, &http.Cookie{
+		Name:     "oauth_state",
+		Value:    state,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   true,
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   300, // 5 minutes
+	})
+
+	// Redirect to the OP for registration
+	s.oauth2Config.Scopes = []string{oidc.ScopeOpenID, "onlyeidas"}
+	redirectURL := s.oauth2Config.AuthCodeURL(state, oauth2.SetAuthURLParam("nonce", nonce))
+	http.Redirect(w, r, redirectURL, http.StatusFound)
+}
+
 // handleCallback handles the OIDC callback
 // The OP calls us here when it has finished authenticating the user
 func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
@@ -205,6 +237,7 @@ func (s *Server) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	ctx := r.Context()
 
+	// Exchange the authorization code for an access_token and an ID_token
 	oauth2Token, err = s.oauth2Config.Exchange(ctx, code)
 	if err != nil {
 		slog.Error("RP token exchange error received", "error", autherror, "description", errorDescription)

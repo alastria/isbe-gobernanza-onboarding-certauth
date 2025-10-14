@@ -11,10 +11,11 @@ type AuthorizationRequest struct {
 	ResponseType string `json:"response_type"`
 	ClientID     string `json:"client_id"`
 	RedirectURI  string `json:"redirect_uri"`
-	Scope        string `json:"scope"`
-	State        string `json:"state"`
-	Nonce        string `json:"nonce,omitempty"`
-	CreatedAt    time.Time
+	// Scope        string `json:"scope"`
+	Scopes    []string
+	State     string `json:"state"`
+	Nonce     string `json:"nonce,omitempty"`
+	CreatedAt time.Time
 }
 
 // RelyingParty represents a registered OIDC relying party
@@ -39,7 +40,7 @@ type AuthProcess struct {
 	RedirectURI           string           `json:"redirect_uri"`
 	State                 string           `json:"state"`
 	Nonce                 string           `json:"nonce"`
-	Scope                 string           `json:"scope"`
+	Scopes                []string         `json:"scopes"`
 	CreatedAt             time.Time        `json:"created_at"`
 	ExpiresAt             time.Time        `json:"expires_at"`
 	CertificateData       *CertificateData `json:"certificate_data,omitempty"`
@@ -47,6 +48,9 @@ type AuthProcess struct {
 	EmailVerificationCode string           `json:"email_verification_code,omitempty"`
 	EmailVerified         bool             `json:"email_verified,omitempty"`
 	ConsentGiven          bool             `json:"consent_given,omitempty"`
+	WalletAuthRequest     string           `json:"wallet_auth_request,omitempty"`
+	CredentialData        map[string]any   `json:"credential_data,omitempty"`
+	FinishedWalletAuth    bool             `json:"finished_wallet_auth,omitempty"`
 }
 
 // SSOSession represents a single sign-on session, stored in-memory in the server
@@ -85,6 +89,7 @@ type TokenResponse struct {
 	ExpiresIn   int            `json:"expires_in"`
 	Scope       string         `json:"scope"`
 	Claims      map[string]any `json:"claims"`
+	IdToken     string         `json:"id_token,omitempty"`
 }
 
 // RPSession represents a user session in the example RP

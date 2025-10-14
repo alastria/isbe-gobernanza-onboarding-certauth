@@ -3,20 +3,25 @@ package certauth
 import (
 	"crypto/rand"
 	"encoding/base64"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"math/big"
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
 	"github.com/evidenceledger/certauth/internal/errl"
+	"github.com/evidenceledger/certauth/internal/jpath"
 	"github.com/evidenceledger/certauth/internal/models"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/utils"
+	"github.com/golang-jwt/jwt/v5"
 	jwtV5 "github.com/golang-jwt/jwt/v5"
+	"github.com/skip2/go-qrcode"
 )
 
 const (
@@ -37,35 +42,44 @@ func (s *Server) handleDiscovery(c *fiber.Ctx) error {
 		"jwks_uri":                              s.cfg.CertAuthURL + jwks_uri,
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
-		"id_token_signing_alg_values_supported": []string{"RS256"},
-		"scopes_supported":                      []string{"openid", "eidas"},
+		"id_token_signing_alg_values_supported": []string{"ES256"},
+		"scopes_supported":                      []string{"openid", "eidas", "onlyeidas", "learcred"},
 		"claims_supported":                      []string{"sub", "iss", "aud", "exp", "iat", "name", "given_name", "family_name", "email", "elsi_organization", "elsi_organization_identifier", "elsi_country"},
 	})
 }
 
-// Authorization handles OAuth2 authorization endpoint
+// Authorization handles OAuth2 authorization endpoint.
+// This is the first step of the authorization process.
+// We support two types of authorization: with an eIDAS certificate and with a Verifiable Credential
 func (s *Server) Authorization(c *fiber.Ctx) error {
-	slog.Info("Authorization request received",
-		"client_id", c.Query("client_id"),
-		"redirect_uri", c.Query("redirect_uri"))
 
 	// Parse authorization request
 	authReq := &models.AuthorizationRequest{
 		ResponseType: utils.CopyString(c.Query("response_type")),
 		ClientID:     utils.CopyString(c.Query("client_id")),
 		RedirectURI:  utils.CopyString(c.Query("redirect_uri")),
-		Scope:        utils.CopyString(c.Query("scope")),
-		State:        utils.CopyString(c.Query("state")),
-		Nonce:        utils.CopyString(c.Query("nonce")),
-		CreatedAt:    time.Now(),
+		// Scope:        utils.CopyString(c.Query("scope")),
+		Scopes:    strings.Fields(c.Query("scope")),
+		State:     utils.CopyString(c.Query("state")),
+		Nonce:     utils.CopyString(c.Query("nonce")),
+		CreatedAt: time.Now(),
 	}
+
+	slog.Info("Authorization request received",
+		"response_type", authReq.ResponseType,
+		"client_id", authReq.ClientID,
+		"redirect_uri", authReq.RedirectURI,
+		"scope", c.Query("scope"),
+		"state", authReq.State,
+		"nonce", authReq.Nonce,
+	)
 
 	// Validate request
 	if err := s.validateAuthorizationRequest(authReq); err != nil {
 		return s.handleAuthorizationError(c, authReq, errl.Errorf("invalid authorization request: %w", err))
 	}
 
-	// Retrieve information we have about the relying party
+	// The relying party must have been registered previously
 	rp, err := s.db.GetRelyingParty(authReq.ClientID)
 	if err != nil {
 		return s.handleAuthorizationError(c, authReq, errl.Errorf("database error: %w", err))
@@ -80,16 +94,16 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 		return s.handleAuthorizationError(c, authReq, errl.Errorf("redirect_uri mismatch"))
 	}
 
-	// Check if certificate authentication is requested with scope 'eidas'
-	if !strings.Contains(authReq.Scope, "eidas") {
-		return s.handleAuthorizationError(c, authReq, errl.Errorf("eidas scope required"))
+	// Check if certificate authentication is requested with scope 'eidas', 'onlyeidas' or 'learcred'
+	if !slices.Contains(authReq.Scopes, "eidas") && !slices.Contains(authReq.Scopes, "onlyeidas") && !slices.Contains(authReq.Scopes, "learcred") {
+		return s.handleAuthorizationError(c, authReq, errl.Errorf("eidas or learcred scopes required"))
 	}
 
-	// Check if we received the SSO cookie
+	// Check if we received the SSO cookie that we generated in a possible recent authentication
 	ssoCookie := c.Cookies("__Http-sso_certauth")
 	ssoClaims, err := s.jwtService.ParseSSOCookieToken(ssoCookie)
 	if err != nil {
-		slog.Warn("Invalid SSO cookie received, proceeding with normal flow", "error", err)
+		slog.Warn("Invalid SSO cookie received, proceeding with normal flow", "error", errl.Error(err))
 	}
 
 	var ssoSession *models.SSOSession
@@ -115,24 +129,28 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 		}
 	}
 
-	// Generate an authorization code for this RP authentication process
-	// But we will bypass certificate selection and use the certificate data from the SSO session
+	// Generate an authorization code for this RP authentication process.
+	// The code is associated to an authorization process object which will be used to track
+	// the whole set of interactions with the user.
 	authProcess := s.generateAuthCode(authReq, rp)
 
-	// Generate the application authorization session
-	// We use the cache with an expiration reasonable for the user to select and use the certificate
+	// Store the authorization process struct in a cache with a reasonable expiration time (currently hardcoded to 15 min)
 	// It will hold the certificate data once it is received by the certsec handler
+	// The key is the unique authorization code used in the OAUth authorithation code flow, which will be
+	// passed around the endpoints to associate with the in-memory authorization proces object.
+	// TODO: maybe create a unique id specific for this purpose, and only send the auth code when it is required.
 	s.cache.Set(authProcess.Code, authProcess, 15*time.Minute)
 
 	if ssoSession != nil {
 
 		// Bypass certificate selection and return directly to caller
-		slog.Debug("bypass certificate selection", "code", authProcess.Code, "redirect_uri", authProcess.RedirectURI)
+		slog.Debug("bypassing certificate selection", "code", authProcess.Code, "redirect_uri", authProcess.RedirectURI)
 
 		// Store certificate data and email of the user in the authProcess struct
 		authProcess.CertificateData = ssoSession.CertificateData
 		authProcess.Email = ssoSession.Email
 
+		// And redirect to the caller
 		redirectURL := fmt.Sprintf("%s?code=%s", authProcess.RedirectURI, authProcess.Code)
 		if authProcess.State != "" {
 			redirectURL += fmt.Sprintf("&state=%s", authProcess.State)
@@ -144,15 +162,389 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 
 		// No valid SSO cookie, proceed with normal flow
 
-		// Present the screen informing the user about the next step
-		return s.html.Render(c, "1_certificate_select", fiber.Map{
-			"authCode":   authProcess.Code,
-			"certsecURL": s.cfg.CertSecURL,
-		})
+		// We pass the auth code so we will be able to retrieve the in-memory auth process object later
+		if slices.Contains(authReq.Scopes, "onlyeidas") {
+			slog.Info("Redirection to ONLY Certificate login")
+			return c.Redirect("/cert/login?code="+authProcess.Code, fiber.StatusFound)
+		}
+		slog.Info("Redirection to BOTH Certificate and Wallet login")
+		return c.Redirect("/login?code="+authProcess.Code, fiber.StatusFound)
 
 	}
 
 }
+
+func (s *Server) LoginPage(c *fiber.Ctx) error {
+	slog.Info("Login page", "from", c.Hostname(), "to", c.IP())
+
+	// Get auth code from query parameter
+	authCode := c.Query("code")
+	if authCode == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing authorization code",
+		})
+	}
+
+	slog.Info("Login page", "auth_code", authCode)
+
+	// Retrieve the AuthorizationRequest from the application authentication session
+	authProcess, err := s.getAuthProcess(authCode)
+	if err != nil {
+		slog.Error("Invalid authorization code", "auth_code", authCode)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": errl.Errorf("Invalid authorization code").Error(),
+		})
+	}
+
+	data := map[string]any{
+		"authCode": authProcess.Code,
+	}
+	slog.Debug("Login page", "data", data)
+
+	return s.html.Render(c, "login", data)
+
+}
+
+func (s *Server) CertLoginPage(c *fiber.Ctx) error {
+	slog.Info("CertLoginPage", "from", c.Hostname(), "to", c.IP())
+
+	// Get auth code from query parameter
+	authCode := c.Query("code")
+	if authCode == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing authorization code",
+		})
+	}
+
+	slog.Info("CertLoginPage", "auth_code", authCode)
+
+	// Retrieve the AuthorizationRequest from the application authentication session
+	authProcess, err := s.getAuthProcess(authCode)
+	if err != nil {
+		slog.Error("Invalid authorization code", "auth_code", authCode)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": errl.Errorf("Invalid authorization code").Error(),
+		})
+	}
+
+	// Present the screen informing the user about the next step
+	return s.html.Render(c, "1_certificate_select", fiber.Map{
+		"authCode":   authProcess.Code,
+		"certsecURL": s.cfg.CertSecURL,
+	})
+
+}
+
+func (s *Server) WalletLoginPage(c *fiber.Ctx) error {
+	slog.Info("Landing page", "from", c.Hostname(), "to", c.IP())
+
+	// Get auth code from query parameter
+	authCode := c.Query("code")
+	if authCode == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing authorization code",
+		})
+	}
+
+	slog.Info("Landing page", "auth_code", authCode)
+
+	// Retrieve the AuthorizationRequest from the application authentication session
+	authProcess, err := s.getAuthProcess(authCode)
+	if err != nil {
+		slog.Error("Invalid authorization code", "auth_code", authCode)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": errl.Errorf("Invalid authorization code").Error(),
+		})
+	}
+
+	// TODO: hardcode this for the moment
+	verifierURL := "https://certauth.mycredential.eu"
+	response_uri := verifierURL + "/wallet/authenticationresponse"
+
+	// We now create an OID4VP Authorization Request to send to the Wallet.
+	// Do not confuse this request with the one we received from the RP. they are associated but different.
+	// With regards to the RP, we are an OpenID Provider and so we receive from the RP a "standard" OIDC auth request.
+	// But for the Wallet we are a RP and the Wallet is the OpenID Provider, speaking the OID4VP protocol.
+	// We request a Verifiable Credential from the Wallet, extract relevant info from it and send back to
+	// the RP a standard OIDC response, so the RP/Application does not have to be involved with the OID4VP protocol.
+
+	// According to OID4VP, the variable 'state' is used to track the interaction process with the Wallet.
+	// We will use the 'authCode' we generated for the authorization process of the RP for this purpose.
+	// That is: authCode will be used to track the whole authentication process, even if it is named differently
+	// when talking to the Wallet.
+	// In this way, when the Wallet sends the OID4VP AuthResponse, we will be able to match the Wallet response with the RP request.
+	walletAuthRequest, err := s.createJWTSecuredAuthenticationRequest(response_uri, authCode)
+	if err != nil {
+		err := errl.Errorf("failed to create wallet authentication request: %w", err)
+		slog.Error(err.Error())
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// Store in our authentication process object
+	authProcess.WalletAuthRequest = walletAuthRequest
+
+	slog.Info("Wallet authentication request created", "wallet_auth_request", walletAuthRequest)
+
+	// Present a screen with the QR code to be scanned by the Wallet
+	data, err := renderWalletLogin(verifierURL, authCode)
+	if err != nil {
+		return errl.Errorf("failed to render login page: %w", err)
+	}
+
+	return s.html.Render(c, "wallet_login", data)
+
+}
+
+func renderWalletLogin(verifierURL string, authRequestID string) (map[string]any, error) {
+
+	// Get our URL defined in the config
+
+	// Build the URL that the Wallet will have to call to retriwve the Authentication Request
+	request_uri := verifierURL + "/wallet/authenticationrequest" + "?state=" + authRequestID
+	request_uri = url.QueryEscape(request_uri)
+
+	// Build the full URI (including the request_uri) for the same-device use
+	sameDeviceWallet := "https://wallet.mycredential.eu"
+	samedevice_uri := sameDeviceWallet + "?request_uri=" + request_uri
+
+	// Build the full URI (including the request_uri) for the cross-device use (mobile)
+	openid4PVURL := "openid4vp://"
+	crossdevice_uri := openid4PVURL + "?request_uri=" + request_uri
+
+	// Create the QR code for cross-device Authentication Request
+	png, err := qrcode.Encode(crossdevice_uri, qrcode.Medium, 256)
+	if err != nil {
+		return nil, errl.Errorf("cannot create QR code: %w", err)
+	}
+
+	// Convert the image data to a dataURL
+	base64Img := base64.StdEncoding.EncodeToString(png)
+	base64Img = "data:image/png;base64," + base64Img
+
+	data := fiber.Map{
+		"AuthRequestID": authRequestID,
+		"QRcode":        base64Img,
+		"Samedevice":    samedevice_uri,
+	}
+
+	return data, nil
+
+}
+
+func (s *Server) APIWalletPoll(c *fiber.Ctx) error {
+
+	// Get state from query parameter
+	authReqId := c.Query("state")
+	if authReqId == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing state value",
+		})
+	}
+
+	// Retrieve the Authentication Process object from the cache
+	authProcess, err := s.getAuthProcess(authReqId)
+	if err != nil {
+		slog.Error("Invalid state", "state", authReqId)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": errl.Errorf("Invalid authorization code").Error(),
+		})
+	}
+
+	if authProcess.FinishedWalletAuth {
+
+		// Redirect to the caller sending the auth code and the state
+		redirectURL := fmt.Sprintf("%s?code=%s", authProcess.RedirectURI, authProcess.Code)
+		if authProcess.State != "" {
+			redirectURL += fmt.Sprintf("&state=%s", authProcess.State)
+		}
+
+		return c.Redirect(redirectURL, fiber.StatusFound)
+
+	} else {
+
+		return c.SendString("pending")
+
+	}
+
+}
+
+// This is the route that the Wallet calls to retrieve the
+// OID4VP Authentication Request object
+func (s *Server) APIWalletAuthenticationRequest(c *fiber.Ctx) error {
+
+	// Get state from query parameter
+	authReqId := c.Query("state")
+	if authReqId == "" {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing state value",
+		})
+	}
+
+	// Retrieve the Authentication Process object from the cache
+	authProcess, err := s.getAuthProcess(authReqId)
+	if err != nil {
+		slog.Error("Invalid state", "state", authReqId)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": errl.Errorf("Invalid authorization code").Error(),
+		})
+	}
+
+	// Get the Wallet AuthRequest
+	walletAuthRequest := authProcess.WalletAuthRequest
+
+	c.Response().Header.Add("Content-Type", "application/oauth-authz-req+jwt")
+	return c.Send([]byte(walletAuthRequest))
+
+}
+
+// The Wallet calls this route to send the Authentication Response with the LEARCredential
+func (s *Server) APIWalletAuthenticationResponse(c *fiber.Ctx) error {
+
+	// Get state from query parameter
+	authReqId := c.FormValue("state")
+	if authReqId == "" {
+		slog.Error("Mising state", "state", authReqId)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing state value",
+		})
+	}
+
+	// Retrieve the Authentication Process object from the cache
+	authProcess, err := s.getAuthProcess(authReqId)
+	if err != nil {
+		slog.Error("Invalid state", "state", authReqId)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": errl.Errorf("Invalid authorization code").Error(),
+		})
+	}
+
+	// // Get the Wallet AuthRequest
+	// walletAuthRequest := authProcess.WalletAuthRequest
+
+	// The state parameter is used to identify the in-memory AutRequest that was sent to the wallet
+	slog.Info("APIWalletAuthenticationResponse", "stateKey", authReqId)
+
+	// Get the vp_token field
+	vp_token := c.FormValue("vp_token")
+	if len(vp_token) == 0 {
+		slog.Error("Mising vp_token", "vp_token", vp_token)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": "Missing vp_token",
+		})
+	}
+
+	// Decode VP token from B64Url to get a JWT
+	vpJWT, err := base64.RawURLEncoding.DecodeString(vp_token)
+	if err != nil {
+		err = errl.Errorf("error decoding vp_token: %w", err)
+		slog.Error("Error decoding VP", "vp_token", vp_token)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// The VP object is a JWT, signed with the private key associated to the user did:key
+	// We must verify the signature and decode the JWT payload to get the VerifiablePresentation
+	// TODO: We do not check the signature.
+	var pc = jwt.MapClaims{}
+	tokenParser := jwt.NewParser()
+	_, _, err = tokenParser.ParseUnverified(string(vpJWT), &pc)
+	if err != nil {
+		err = errl.Errorf("parsing vp_token: %w", err)
+		slog.Error("Error parsing vp_token", "vp_token", vp_token)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	fmt.Print(pc["vp"])
+
+	// Parse the VP object into a map
+	vp := jpath.GetMap(pc, "vp")
+	if vp == nil {
+		err := errl.Errorf("error parsing the VP object")
+		slog.Error("Error parsing vp_token", "vp_token", vp_token)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// Get the list of credentials in the VP
+	credentials := jpath.GetList(vp, "verifiableCredential")
+	if len(credentials) == 0 {
+		err := errl.Errorf("no credentials found in VP")
+		slog.Error("Error parsing vp_token", "vp_token", vp_token)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// TODO: for the moment, we accept only the first credential inside the VP
+	firstCredentialJWT, _ := credentials[0].(string)
+	if len(firstCredentialJWT) == 0 {
+		err := errl.Errorf("invalid credential in VP")
+		slog.Error("Error parsing vp_token", "vp_token", vp_token)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// The credential is in 'jwt_vc_json' format (which is a JWT)
+	var credMap = jwt.MapClaims{}
+	_, _, err = tokenParser.ParseUnverified(firstCredentialJWT, &credMap)
+	if err != nil {
+		err := errl.Errorf("error parsing the JWT:%s", errl.Error(err))
+		slog.Error("Error parsing vp_token", "vp_token", vp_token)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+
+	// Serialize the credential into a JSON string
+	serialCredential, err := json.Marshal(credMap)
+	if err != nil {
+		err := errl.Errorf("error serialising the credential:%s", errl.Error(err))
+		slog.Error("Error parsing vp_token", "vp_token", vp_token)
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
+			"error": err.Error(),
+		})
+	}
+	slog.Info("credential", "cred", string(serialCredential))
+
+	// // Invoke the PDP (Policy Decision Point) to authenticate/authorize this request
+	// accepted, err := pdp.TakeAuthnDecision(Authenticate, r, string(serialCredential), "")
+	// if err != nil {
+	// 	slog.Error("error evaluating authentication rules", "error", err)
+	// 	http.Error(w, fmt.Sprintf("error evaluating authentication rules:%s", err), http.StatusInternalServerError)
+	// 	return
+	// }
+
+	// if !accepted {
+	// 	slog.Error("PDP rejected authentication")
+	// 	http.Error(w, "authentication failed", http.StatusUnauthorized)
+	// 	return
+	// }
+
+	// Update the internal AuthProcess with the LEARCredential received from the Wallet and signal we are finished.
+	authProcess.CredentialData = credMap
+	authProcess.FinishedWalletAuth = true
+
+	// Send reply to the Wallet, so it can show a success screen
+	resp := map[string]string{
+		"authenticatorRequired": "no",
+		"type":                  "login",
+		"email":                 "email",
+	}
+
+	return c.JSON(resp)
+
+}
+
+// **************************************************************
+// **************************************************************
+// **************************************************************
 
 // handleCertificateReceive is invoked from CertSec when the user has selected a certificate in the browser popup
 func (s *Server) handleCertificateReceive(c *fiber.Ctx) error {
@@ -248,19 +640,10 @@ func (s *Server) handleTokenExchange(c *fiber.Ctx) error {
 		tokenReq.ClientID = username
 	}
 
-	// Retrieve the AuthorizationRequest associated with the authCode
-	authCodeIntf, _ := s.cache.Get(tokenReq.Code)
-	if authCodeIntf == nil {
-		err := errl.Errorf("authorization code not found in cache")
-		slog.Error(err.Error(), "auth_code", tokenReq.Code)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	authProcess, ok := authCodeIntf.(*models.AuthProcess)
-	if !ok {
-		err := errl.Errorf("invalid authorization request type in cache")
+	// Retrieve the Authorization process associated with the authCode
+	authProcess, err := s.getAuthProcess(tokenReq.Code)
+	if err != nil {
+		err = errl.Errorf("failed to get auth process: %w", err)
 		slog.Error(err.Error(), "auth_code", tokenReq.Code)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
@@ -276,12 +659,6 @@ func (s *Server) handleTokenExchange(c *fiber.Ctx) error {
 	rp, err := s.db.GetRelyingParty(tokenReq.ClientID)
 	if err != nil {
 		return errl.Errorf("failed to get relying party: %w", err)
-	}
-
-	certData := authProcess.CertificateData
-	if certData == nil {
-		slog.Error("No certificate data found in auth process, proceeding without it", "auth_code", tokenReq.Code)
-		return errl.Errorf("no certificate data found in auth process: %s", tokenReq.Code)
 	}
 
 	// Generate tokens with certificate data if available
@@ -322,11 +699,8 @@ func (s *Server) validateAuthorizationRequest(req *models.AuthorizationRequest) 
 	if req.RedirectURI == "" {
 		return errl.Errorf("missing redirect_uri")
 	}
-	if !strings.Contains(req.Scope, "openid") {
+	if !slices.Contains(req.Scopes, "openid") {
 		return errl.Errorf("openid scope required")
-	}
-	if !strings.Contains(req.Scope, "eidas") {
-		return errl.Errorf("eidas scope required")
 	}
 	return nil
 }
@@ -408,7 +782,7 @@ func (s *Server) generateAuthCode(req *models.AuthorizationRequest, rp *models.R
 		RedirectURI: req.RedirectURI,
 		State:       req.State,
 		Nonce:       req.Nonce,
-		Scope:       req.Scope,
+		Scopes:      req.Scopes,
 		CreatedAt:   time.Now(),
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
@@ -419,42 +793,65 @@ func (s *Server) generateAuthCode(req *models.AuthorizationRequest, rp *models.R
 
 func (s *Server) generateTokens(authProcess *models.AuthProcess, rp *models.RelyingParty) (map[string]any, error) {
 
-	certData := authProcess.CertificateData
-
-	// It is an error not to have certificate data
-	// This should not happen if the flow is correct, as certData is set in handleCertificateReceive
-	// and handleConsent. If it's nil, it means something went wrong or the session expired.
-	// We return an error to the client. This is an internal server error.
-	if certData == nil {
-		return nil, errl.Errorf("no certificate data found in auth process: %s", authProcess.Code)
+	if authProcess.CertificateData == nil && authProcess.CredentialData == nil {
+		err := errl.Errorf("no credential or certificate data found in auth process")
+		slog.Error(err.Error(), "auth_code", authProcess.Code)
+		return nil, err
 	}
 
-	// If we have certificate data, generate real JWT tokens
+	if authProcess.CertificateData != nil {
 
-	// Generate ID token
-	idToken, err := s.jwtService.GenerateIDToken(authProcess, certData, rp)
-	if err != nil {
-		return nil, errl.Errorf("failed to generate ID token: %w", err)
+		certData := authProcess.CertificateData
+
+		// Generate ID token
+		idToken, err := s.jwtService.GenerateIDTokenForCert(authProcess, certData, rp)
+		if err != nil {
+			return nil, errl.Errorf("failed to generate ID token: %w", err)
+		}
+
+		tokenString, err := s.jwtService.GenerateAccessTokenForCert(authProcess, certData, rp)
+		if err != nil {
+			return nil, errl.Errorf("failed to generate access token: %w", err)
+		}
+
+		slog.Info("JWT tokens generated with certificate data",
+			"organization_id", certData.OrganizationID,
+			"organization", certData.Subject.Organization,
+		)
+
+		return map[string]any{
+			"access_token": tokenString,
+			"token_type":   "Bearer",
+			"expires_in":   rp.TokenExpiry,
+			"scope":        strings.Join(authProcess.Scopes, " "),
+			"id_token":     idToken,
+		}, nil
+
+	} else {
+
+		credData := authProcess.CredentialData
+
+		idToken, err := s.jwtService.GenerateIDTokenForCredential(authProcess, credData, rp)
+		if err != nil {
+			return nil, errl.Errorf("failed to generate ID token: %w", err)
+		}
+
+		tokenString, err := s.jwtService.GenerateAccessTokenForCredential(authProcess, credData, rp)
+		if err != nil {
+			return nil, errl.Errorf("failed to generate access token: %w", err)
+		}
+
+		slog.Info("JWT tokens generated with credential data")
+
+		return map[string]any{
+			"access_token": tokenString,
+			"token_type":   "Bearer",
+			"expires_in":   rp.TokenExpiry,
+			"scope":        strings.Join(authProcess.Scopes, " "),
+			"id_token":     idToken,
+		}, nil
+
 	}
-
-	// Generate access token
-	accessToken, err := s.jwtService.GenerateTokenResponse(authProcess, certData, rp)
-	if err != nil {
-		return nil, errl.Errorf("failed to generate access token: %w", err)
-	}
-
-	slog.Info("Real JWT tokens generated with certificate data",
-		"organization_id", certData.OrganizationID,
-		"organization", certData.Subject.Organization,
-	)
-
-	return map[string]any{
-		"access_token": accessToken.AccessToken,
-		"token_type":   accessToken.TokenType,
-		"expires_in":   accessToken.ExpiresIn,
-		"scope":        accessToken.Scope,
-		"id_token":     idToken,
-	}, nil
 
 }
 
@@ -792,4 +1189,21 @@ func (s *Server) generateSSOCookie(ssoSessionID string, certData *models.Certifi
 	}
 
 	return cookie, nil
+}
+
+func (s *Server) getAuthProcess(authCode string) (*models.AuthProcess, error) {
+
+	// Retrieve the AuthorizationRequest from the application authentication session
+	entry, _ := s.cache.Get(authCode)
+	if entry == nil {
+		return nil, errl.Errorf("Authorization code not found in cache for auth_code: %s", authCode)
+	}
+
+	authProcess, ok := entry.(*models.AuthProcess)
+	if !ok {
+		return nil, errl.Errorf("Invalid authorization request type in cache for auth_code: %s", authCode)
+	}
+
+	return authProcess, nil
+
 }

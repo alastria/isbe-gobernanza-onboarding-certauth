@@ -8,7 +8,7 @@ import (
 	"os/signal"
 	"syscall"
 
-	"github.com/evidenceledger/certauth/internal/onboardserver"
+	"github.com/evidenceledger/certauth/internal/mainserver"
 )
 
 var (
@@ -90,7 +90,7 @@ func main() {
 	}
 
 	// Create the configuration
-	cfg := onboardserver.Config{
+	cfg := mainserver.Config{
 		Development:  development,
 		CertAuthPort: certauthPort,
 		CertAuthURL:  certauthURL,
@@ -101,7 +101,7 @@ func main() {
 	}
 
 	// Create the main server. This will initialize the individual HTTP services and the database.
-	srv := onboardserver.New(adminPassword, cfg)
+	srv := mainserver.New(adminPassword, cfg)
 
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
