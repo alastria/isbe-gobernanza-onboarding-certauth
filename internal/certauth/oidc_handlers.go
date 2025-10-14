@@ -531,11 +531,18 @@ func (s *Server) APIWalletAuthenticationResponse(c *fiber.Ctx) error {
 	authProcess.CredentialData = credMap
 	authProcess.FinishedWalletAuth = true
 
+	// Redirect to the caller sending the auth code and the state
+	redirectURL := fmt.Sprintf("%s?code=%s", authProcess.RedirectURI, authProcess.Code)
+	if authProcess.State != "" {
+		redirectURL += fmt.Sprintf("&state=%s", authProcess.State)
+	}
+
 	// Send reply to the Wallet, so it can show a success screen
 	resp := map[string]string{
 		"authenticatorRequired": "no",
 		"type":                  "login",
 		"email":                 "email",
+		"redirectURL":           redirectURL,
 	}
 
 	return c.JSON(resp)
