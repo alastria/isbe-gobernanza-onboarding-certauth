@@ -257,8 +257,8 @@ func (s *Server) WalletLoginPage(c *fiber.Ctx) error {
 		})
 	}
 
-	// TODO: hardcode this for the moment
-	verifierURL := "https://certauth.mycredential.eu"
+	verifierURL := s.cfg.CertAuthURL
+	// This is the response url for the wallet
 	response_uri := verifierURL + "/wallet/authenticationresponse"
 
 	// We now create an OID4VP Authorization Request to send to the Wallet.
