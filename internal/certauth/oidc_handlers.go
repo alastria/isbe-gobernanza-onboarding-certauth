@@ -306,7 +306,7 @@ func renderWalletLogin(verifierURL string, authRequestID string) (map[string]any
 	request_uri = url.QueryEscape(request_uri)
 
 	// Build the full URI (including the request_uri) for the same-device use
-	sameDeviceWallet := "https://wallet.mycredential.eu"
+	sameDeviceWallet := "https://eudiwallet.mycredential.eu"
 	samedevice_uri := sameDeviceWallet + "?request_uri=" + request_uri
 
 	// Build the full URI (including the request_uri) for the cross-device use (mobile)
