@@ -1,197 +1,51 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <title>Certificate Selection Required</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Roboto', sans-serif;
-            margin: 0;
-            background-color: #f2f2f2;
-            color: #333;
-        }
-
-        .header {
-            background-color: #f9f3e7;
-            padding: 20px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .header h1 {
-            margin: 0;
-            font-size: 24px;
-        }
-
-        .main.container {
-            padding: 40px;
-            background-color: #f9f3e7;
-        }
-
-        .content-box {
-            background-color: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .message {
-            background-color: #f8f8f8;
-            border-left: 4px solid #fbbd08;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .message .header {
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .button {
-            background-color: #db4437;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 4px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-
-        .button:hover {
-            background-color: #c53727;
-        }
-
-        .divider {
-            border-top: 1px solid #ddd;
-            margin: 30px 0;
-        }
-    </style>
-
-    <style>
-        .logo-bar {
-            padding: 1rem 1.875rem;
-            background-color: #ffffff;
-        }
-
-        .logo-bar ul {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 1rem;
-            list-style: none;
-            margin: 0;
-            padding: 0;
-        }
-
-        .logo-bar picture,
-        .logo-bar img {
-            height: 1.25rem;
-            width: auto;
-            flex-shrink: 0;
-        }
-
-        /* Responsive adjustments */
-        @media (min-width: 640px) {
-            .logo-bar {
-                padding-top: 1.875rem;
-                padding-bottom: 1.875rem;
-            }
-
-            .logo-bar ul {
-                column-gap: 1.875rem;
-            }
-        }
-
-        @media (min-width: 768px) {
-            .logo-bar ul {
-                column-gap: 2.5rem;
-            }
-        }
-
-        @media (min-width: 1024px) {
-
-            .logo-bar picture,
-            .logo-bar img {
-                height: 1.875rem;
-            }
-        }
-    </style>
-</head>
+{{template "partials/preamble"}}
 
 <body>
+    {{template "partials/logobar"}}
 
-    <div class="logo-bar">
-        <ul>
-            <li>
-                <picture>
-                    <img src="/static/images/nextgeneration.png"
-                        alt="nextgeneration" width="220" height="53" loading="lazy" />
-                </picture>
-            </li>
-            <li>
-                <picture>
-                    <img src="/static/images/gobierno.png"
-                        alt="gobierno" width="308" height="53" loading="lazy" />
-                </picture>
-            </li>
-            <li>
-                <picture>
-                    <img src="/static/images/plan.png"
-                        alt="plan" width="161" height="53" loading="lazy" />
-                </picture>
-            </li>
-            <li>
-                <picture>
-                    <img src="/static/images/cam.png"
-                        alt="cam" width="190" height="59" loading="lazy" />
-                </picture>
-            </li>
-            <li>
-                <picture>
-                    <img src="/static/images/alastria.png"
-                        alt="alastria" width="282" height="59" loading="lazy" />
-                </picture>
-            </li>
-        </ul>
-    </div>
+    <div class="ui hidden divider"></div>
 
-    <div class="header">
-        <h1>Register or Login with eIDAS Certificate</h1>
-    </div>
+    <div class="ui container" style="max-width: 800px;">
 
-    <div class="main container">
-        <div class="content-box">
-            <h2>Certificate Selection Required</h2>
-            <div class="message">
-                <div class="header">Note</div>
-                <p>Clicking the button below will redirect you to a secure domain where your browser will prompt you to
-                    select a certificate from your certificate store.</p>
+        <div class="ui huge header">Entrar con un certificado de representación</div>
+
+        <div class="ui raised segment">
+
+            <div class="ui warning message">
+                <div class="header">
+                    NOTA: Serás enviado a un sitio seguro donde tu navegador te solicitará que selecciones
+                    uno de los certificados que tienes instalados en tu navegador.
+                    Si no tienes ningún certificado instalado, tu navegador the mostrará un error indicandote este
+                    hecho.
+                </div>
             </div>
-            <p>
-                You can register or login with you eIDAS certificate.
+
+            <div class="ui basic fitted center aligned segment">
+                <a href="{{ .certsecURL }}/auth?code={{ .authCode }}"
+                    class="certificate ui large black submit circular button">Usar un certificado</a>
+            </div>
+
+            <div class="ui divider"></div>
+
+            <p>El certificado a usar es el mismo certificado digital con el que un representante legal de una
+                organización firma documentos en nombre de una organización (por ejemplo en formato PDF) o se
+                identifica en las sedes electrónicas
+                de la Adminitración Pública para actuar como representante de esa organización.
+            </p>
+            <p>Los certificados digitales de persona física no se pueden utilizar.</p>
+
+            <div class="ui divider"></div>
+
+            <p>Si ya estás registrado, usarás tu certificado para entrar en tu área privada.
+                Si no, te pediremos tu correo electrónico, lo verificaremos y te registraremos en el sistema.
             </p>
             <p>
-                If you are already registered, you will use you certificate to enter your private area.
-                Otherwise, we will request your email, verify it and we will register you in our system.
+                Si te has registrado o entrado recientemente, te llevaremos directamente a tu área privada..
             </p>
-            <p>
-                If you have registered or logged in recently you will be taken directly to your private area.
-            </p>
-            <div class="divider"></div>
-            <p>Click the button below to proceed with certificate selection:</p>
-            <button class="button" onclick="proceedWithCertificate()">
-                Proceed with Certificate
-            </button>
+
         </div>
+
     </div>
-    <script>
-        function proceedWithCertificate() {
-            window.location.href = '{{ .certsecURL }}/auth?code={{ .authCode }}';
-        }
-    </script>
 </body>
 
 </html>

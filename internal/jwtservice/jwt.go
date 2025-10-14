@@ -172,6 +172,10 @@ func (s *JWTService) GenerateIDTokenForCredential(authCode *models.AuthProcess, 
 		}
 	}
 
+	claims["country"] = jpath.GetString(mandator, "country")
+
+	claims["vc"] = cred
+
 	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 

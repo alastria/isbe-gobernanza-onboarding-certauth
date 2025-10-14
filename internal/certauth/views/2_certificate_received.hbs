@@ -1,198 +1,81 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <title>Email Confirmation (1 of 2)</title>
-    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
-    <style>
-        body {
-            font-family: 'Roboto', sans-serif;
-            margin: 0;
-            background-color: #f2f2f2;
-            color: #333;
-        }
-
-        .header {
-            background-color: #f9f3e7;
-            padding: 20px 40px;
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
-
-        .header h1 {
-            margin: 0;
-            font-size: 24px;
-        }
-
-        .main.container {
-            padding: 40px;
-            background-color: #f9f3e7;
-        }
-
-        .content-box {
-            background-color: white;
-            padding: 40px;
-            border-radius: 8px;
-            box-shadow: 0 2px 10px rgba(0, 0, 0, 0.1);
-        }
-
-        .message {
-            background-color: #f8f8f8;
-            border-left: 4px solid #fbbd08;
-            padding: 20px;
-            margin-bottom: 20px;
-        }
-
-        .message .header {
-            font-weight: bold;
-            margin-bottom: 5px;
-        }
-
-        .button {
-            background-color: #db4437;
-            color: white;
-            padding: 15px 30px;
-            border: none;
-            border-radius: 4px;
-            font-size: 16px;
-            cursor: pointer;
-            transition: background-color 0.3s;
-        }
-
-        .button:hover {
-            background-color: #c53727;
-        }
-
-        .divider {
-            border-top: 1px solid #ddd;
-            margin: 30px 0;
-        }
-    </style>
-
-    <style>
-        .logo-bar {
-            padding: 1rem 1.875rem;
-            background-color: #ffffff;
-        }
-
-        .logo-bar ul {
-            display: flex;
-            flex-wrap: wrap;
-            align-items: center;
-            gap: 1rem;
-            list-style: none;
-            margin: 0;
-            padding: 0;
-        }
-
-        .logo-bar picture,
-        .logo-bar img {
-            height: 1.25rem;
-            width: auto;
-            flex-shrink: 0;
-        }
-
-        /* Responsive adjustments */
-        @media (min-width: 640px) {
-            .logo-bar {
-                padding-top: 1.875rem;
-                padding-bottom: 1.875rem;
-            }
-
-            .logo-bar ul {
-                column-gap: 1.875rem;
-            }
-        }
-
-        @media (min-width: 768px) {
-            .logo-bar ul {
-                column-gap: 2.5rem;
-            }
-        }
-
-        @media (min-width: 1024px) {
-
-            .logo-bar picture,
-            .logo-bar img {
-                height: 1.875rem;
-            }
-        }
-    </style>
-
-    {{template "partials/fomantic"}}
-</head>
+{{template "partials/preamble"}}
 
 <body>
-    <div class="ui main text container">
-        <div class="ui raised padded segment">
-            <h1 class="ui header">
-                <i class="envelope icon"></i>
-                <div class="content">
-                    Email Confirmation (1 of 2)
-                    <div class="sub header">Additional Verification Required</div>
+    {{template "partials/logobar"}}
+
+    <div class="ui hidden divider"></div>
+
+    <div class="ui container" style="max-width: 800px;">
+
+        <div class="ui huge header">Certificado recibido</div>
+
+        <div class="ui raised segment">
+
+            <div class="ui positive message">
+                <div class="header">
+                    Hemos recibido tu certificado. Ahora tenemos que confirmar tu correo electrónico
+                    para completar el proceso de registro.
                 </div>
-            </h1>
-            <div class="ui info message">
-                <p>
-                    We have successfully verified your certificate. Now we need to confirm your email address to complete the authentication process.
-                </p>
             </div>
 
+            <div class="ui divider"></div>
+
             <div class="ui teal segment">
-                <h3 class="ui header"><i class="id card icon"></i>Certificate Information Retrieved</h3>
-                <p>Your certificate has been verified and contains the following information:</p>
 
                 {{ if .subject.OrganizationIdentifier }}
-                <h4 class="ui header"><i class="building icon"></i>Organization Certificate Details</h4>
+                <h3 class="ui header"><i class="building icon"></i>Datos del certificado organizativo</h3>
                 {{ else }}
-                <h4 class="ui header"><i class="user icon"></i>Personal Certificate Details</h4>
+                <h3 class="ui header"><i class="user icon"></i>Datos del certificado personal</h3>
                 {{ end }}
 
                 <div class="ui list">
+
                     {{ if .subject.OrganizationIdentifier }}
-                    <div class="item"><strong>Organization Identifier:</strong> {{ .subject.OrganizationIdentifier }}</div>
+                    <div class="item"><strong>Identificador de la organización:</strong>
+                        {{ .subject.OrganizationIdentifier }}
+                    </div>
                     {{ end }}
 
                     {{ if .subject.Organization }}
-                    <div class="item"><strong>Organization:</strong> {{ .subject.Organization }}</div>
+                    <div class="item"><strong>Organización:</strong> {{ .subject.Organization }}</div>
                     {{ end }}
 
                     {{ if .subject.OrganizationalUnit }}
-                    <div class="item"><strong>Organizational Unit:</strong> {{ .subject.OrganizationalUnit }}</div>
+                    <div class="item"><strong>Unidad organizativa:</strong> {{ .subject.OrganizationalUnit }}</div>
                     {{ end }}
 
                     {{ if .subject.Country }}
-                    <div class="item"><strong>Country:</strong> {{ .subject.Country }}</div>
+                    <div class="item"><strong>País:</strong> {{ .subject.Country }}</div>
                     {{ end }}
 
                     {{ if .subject.CommonName }}
-                    <div class="item"><strong>Common Name:</strong> {{ .subject.CommonName }}</div>
+                    <div class="item"><strong>Nombre común:</strong> {{ .subject.CommonName }}</div>
                     {{ end }}
 
                     {{ if .subject.SerialNumber }}
-                    <div class="item"><strong>Serial Number:</strong> {{ .subject.SerialNumber }}</div>
+                    <div class="item"><strong>Número de serie:</strong> {{ .subject.SerialNumber }}</div>
                     {{ end }}
 
                     {{ if .subject.EmailAddress }}
-                    <div class="item"><strong>Email from Certificate:</strong> {{ .subject.EmailAddress }}</div>
+                    <div class="item"><strong>Email:</strong> {{ .subject.EmailAddress }}</div>
                     {{ end }}
 
                     {{ if .subject.Locality }}
-                    <div class="item"><strong>Locality:</strong> {{ .subject.Locality }}</div>
+                    <div class="item"><strong>Localidad:</strong> {{ .subject.Locality }}</div>
                     {{ end }}
 
                     {{ if .subject.Province }}
-                    <div class="item"><strong>Province:</strong> {{ .subject.Province }}</div>
+                    <div class="item"><strong>Provincia:</strong> {{ .subject.Province }}</div>
                     {{ end }}
 
                     {{ if .subject.StreetAddress }}
-                    <div class="item"><strong>Street Address:</strong> {{ .subject.StreetAddress }}</div>
+                    <div class="item"><strong>Calle:</strong> {{ .subject.StreetAddress }}</div>
                     {{ end }}
 
                     {{ if .subject.PostalCode }}
-                    <div class="item"><strong>Postal Code:</strong> {{ .subject.PostalCode }}</div>
+                    <div class="item"><strong>Código postal:</strong> {{ .subject.PostalCode }}</div>
                     {{ end }}
+
                 </div>
             </div>
 
@@ -209,25 +92,30 @@
             {{ end }}
 
             <div class="ui divider"></div>
-            
+
             <div class="ui segment">
-                <h3 class="ui header"><i class="envelope icon"></i>Email Confirmation</h3>
-                <p>Please enter your email address below. We will send you a verification code to confirm ownership of this email address.</p>
-                
+                <h3 class="ui header"><i class="envelope icon"></i>Correo electrónico</h3>
+                <p>Por favor, introduce tu correo electrónico en este campo. Te enviaremos un
+                    código de verificación que nos permitirá confirmar tu dirección electrónica.
+                </p>
+
                 <form class="ui form" method="POST" action="/request-email-verification">
                     <input type="hidden" name="auth_code" value="{{ .authCode }}">
                     <div class="field">
-                        <label for="email">Email Address</label>
-                        <input type="email" id="email" name="email" placeholder="Enter your email address" required>
+                        <label for="email">Correo electrónico</label>
+                        <input type="email" id="email" name="email" placeholder="Introduce tu correo electrónico"
+                            required>
                     </div>
-                    <button type="submit" class="ui blue button">
-                        <i class="paper plane icon"></i> Send Verification Code
+                    <button type="submit" class="ui large black circular button">
+                        <i class="paper plane icon"></i> Enviar código de verificación
                     </button>
                 </form>
             </div>
-            
+
         </div>
+
     </div>
+
 </body>
 
-</html>    
+</html>

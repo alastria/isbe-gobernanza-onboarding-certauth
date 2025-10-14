@@ -18,7 +18,6 @@ import (
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
 	"github.com/gofiber/fiber/v2/middleware/helmet"
-	"github.com/gofiber/fiber/v2/middleware/limiter"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 )
@@ -71,11 +70,11 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	// Enable CORS for all origins
 	app.Use(cors.New())
 
-	// Limit repeat requests to our APIs
-	app.Use(limiter.New(limiter.Config{
-		Max:        20,
-		Expiration: 5 * time.Minute,
-	}))
+	// // Limit repeat requests to our APIs
+	// app.Use(limiter.New(limiter.Config{
+	// 	Max:        20,
+	// 	Expiration: 5 * time.Minute,
+	// }))
 
 	app.Static("/static", "./internal/certauth/views/assets")
 
@@ -118,7 +117,7 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	// *******************************************************
 	// *******************************************************
 	// The main landing page
-	s.app.Get("/landing", s.LandingPage)
+	s.app.Get("/login", s.LoginPage)
 
 	// *******************************************************
 	// *******************************************************

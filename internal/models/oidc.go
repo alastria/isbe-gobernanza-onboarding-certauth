@@ -11,10 +11,11 @@ type AuthorizationRequest struct {
 	ResponseType string `json:"response_type"`
 	ClientID     string `json:"client_id"`
 	RedirectURI  string `json:"redirect_uri"`
-	Scope        string `json:"scope"`
-	State        string `json:"state"`
-	Nonce        string `json:"nonce,omitempty"`
-	CreatedAt    time.Time
+	// Scope        string `json:"scope"`
+	Scopes    []string
+	State     string `json:"state"`
+	Nonce     string `json:"nonce,omitempty"`
+	CreatedAt time.Time
 }
 
 // RelyingParty represents a registered OIDC relying party
@@ -39,7 +40,7 @@ type AuthProcess struct {
 	RedirectURI           string           `json:"redirect_uri"`
 	State                 string           `json:"state"`
 	Nonce                 string           `json:"nonce"`
-	Scope                 string           `json:"scope"`
+	Scopes                []string         `json:"scopes"`
 	CreatedAt             time.Time        `json:"created_at"`
 	ExpiresAt             time.Time        `json:"expires_at"`
 	CertificateData       *CertificateData `json:"certificate_data,omitempty"`

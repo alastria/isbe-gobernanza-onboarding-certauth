@@ -28,12 +28,12 @@ type Config struct {
 
 // Server manages both CertAuth and CertSec servers
 type Server struct {
-	cfg       Config
-	certauth  *certauth.Server
-	certsec   *certsec.Server
-	examplerp *onboard.Server
-	db        *database.Database
-	adminPW   string
+	cfg            Config
+	certauthServer *certauth.Server
+	certsecServer  *certsec.Server
+	onboardServer  *onboard.Server
+	db             *database.Database
+	adminPW        string
 }
 
 // New creates a new server instance
@@ -56,8 +56,8 @@ func New(adminPassword string, cfg Config) *Server {
 		CertSecPort:  cfg.CertSecPort,
 	}
 
-	ca := certauth.New(db, cache, adminPassword, certCfg)
-	cs := certsec.New(db, cache, certCfg)
+	certauthServer := certauth.New(db, cache, adminPassword, certCfg)
+	certsecServer := certsec.New(db, cache, certCfg)
 
 	// Create the example RP server.
 	// It uses the CertAuth server as the OP.
@@ -68,20 +68,20 @@ func New(adminPassword string, cfg Config) *Server {
 		clientid = "testonboard"
 		clientsecret = "isbesecret"
 	}
-	erp := onboard.New(cfg.OnboardPort, cfg.OnboardURL, cfg.CertAuthURL, clientid, clientsecret)
+	onboardServer := onboard.New(cfg.OnboardPort, cfg.OnboardURL, cfg.CertAuthURL, clientid, clientsecret)
 
 	return &Server{
-		certauth:  ca,
-		certsec:   cs,
-		examplerp: erp,
-		db:        db,
-		adminPW:   adminPassword,
-		cfg:       cfg,
+		certauthServer: certauthServer,
+		certsecServer:  certsecServer,
+		onboardServer:  onboardServer,
+		db:             db,
+		adminPW:        adminPassword,
+		cfg:            cfg,
 	}
 
 }
 
-// Start starts both servers: CertAuth and CertSec. Also it starts (for the moment) the demo RP server
+// Start starts both servers: CertAuth and CertSec. Also it starts the Onboarding server
 func (s *Server) Start(ctx context.Context) error {
 	// Initialize database
 	if err := s.db.Initialize(); err != nil {
@@ -95,7 +95,7 @@ func (s *Server) Start(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := s.certauth.Start(ctx); err != nil {
+		if err := s.certauthServer.Start(ctx); err != nil {
 			errChan <- fmt.Errorf("certauth server failed: %w", err)
 		}
 	}()
@@ -104,17 +104,17 @@ func (s *Server) Start(ctx context.Context) error {
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		if err := s.certsec.Start(ctx); err != nil {
+		if err := s.certsecServer.Start(ctx); err != nil {
 			errChan <- fmt.Errorf("certsec server failed: %w", err)
 		}
 	}()
 
-	// Start Example RP server (port 8092)
+	// Start Example Onboard server (port 8092)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
 		time.Sleep(2 * time.Second)
-		if err := s.examplerp.Start(); err != nil {
+		if err := s.onboardServer.Start(); err != nil {
 			errChan <- fmt.Errorf("example rp server failed: %w", err)
 		}
 	}()

@@ -10,6 +10,7 @@ import (
 	"net"
 	"net/url"
 	"regexp"
+	"slices"
 	"strings"
 	"time"
 
@@ -42,7 +43,7 @@ func (s *Server) handleDiscovery(c *fiber.Ctx) error {
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"ES256"},
-		"scopes_supported":                      []string{"openid", "eidas", "learcred"},
+		"scopes_supported":                      []string{"openid", "eidas", "onlyeidas", "learcred"},
 		"claims_supported":                      []string{"sub", "iss", "aud", "exp", "iat", "name", "given_name", "family_name", "email", "elsi_organization", "elsi_organization_identifier", "elsi_country"},
 	})
 }
@@ -57,17 +58,18 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 		ResponseType: utils.CopyString(c.Query("response_type")),
 		ClientID:     utils.CopyString(c.Query("client_id")),
 		RedirectURI:  utils.CopyString(c.Query("redirect_uri")),
-		Scope:        utils.CopyString(c.Query("scope")),
-		State:        utils.CopyString(c.Query("state")),
-		Nonce:        utils.CopyString(c.Query("nonce")),
-		CreatedAt:    time.Now(),
+		// Scope:        utils.CopyString(c.Query("scope")),
+		Scopes:    strings.Fields(c.Query("scope")),
+		State:     utils.CopyString(c.Query("state")),
+		Nonce:     utils.CopyString(c.Query("nonce")),
+		CreatedAt: time.Now(),
 	}
 
 	slog.Info("Authorization request received",
 		"response_type", authReq.ResponseType,
 		"client_id", authReq.ClientID,
 		"redirect_uri", authReq.RedirectURI,
-		"scope", authReq.Scope,
+		"scope", c.Query("scope"),
 		"state", authReq.State,
 		"nonce", authReq.Nonce,
 	)
@@ -92,8 +94,8 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 		return s.handleAuthorizationError(c, authReq, errl.Errorf("redirect_uri mismatch"))
 	}
 
-	// Check if certificate authentication is requested with scope 'eidas' or 'learcred'
-	if !strings.Contains(authReq.Scope, "eidas") && !strings.Contains(authReq.Scope, "learcred") {
+	// Check if certificate authentication is requested with scope 'eidas', 'onlyeidas' or 'learcred'
+	if !slices.Contains(authReq.Scopes, "eidas") && !slices.Contains(authReq.Scopes, "onlyeidas") && !slices.Contains(authReq.Scopes, "learcred") {
 		return s.handleAuthorizationError(c, authReq, errl.Errorf("eidas or learcred scopes required"))
 	}
 
@@ -160,22 +162,20 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 
 		// No valid SSO cookie, proceed with normal flow
 
-		// // Present the screen informing the user about the next step
-		// return s.html.Render(c, "1_certificate_select", fiber.Map{
-		// 	"authCode":   authProcess.Code,
-		// 	"certsecURL": s.cfg.CertSecURL,
-		// })
-		// Present the screen informing the user about the next step
-
 		// We pass the auth code so we will be able to retrieve the in-memory auth process object later
-		return c.Redirect("/landing?code="+authProcess.Code, fiber.StatusFound)
+		if slices.Contains(authReq.Scopes, "onlyeidas") {
+			slog.Info("Redirection to ONLY Certificate login")
+			return c.Redirect("/cert/login?code="+authProcess.Code, fiber.StatusFound)
+		}
+		slog.Info("Redirection to BOTH Certificate and Wallet login")
+		return c.Redirect("/login?code="+authProcess.Code, fiber.StatusFound)
 
 	}
 
 }
 
-func (s *Server) LandingPage(c *fiber.Ctx) error {
-	slog.Info("Landing page", "from", c.Hostname(), "to", c.IP())
+func (s *Server) LoginPage(c *fiber.Ctx) error {
+	slog.Info("Login page", "from", c.Hostname(), "to", c.IP())
 
 	// Get auth code from query parameter
 	authCode := c.Query("code")
@@ -185,7 +185,7 @@ func (s *Server) LandingPage(c *fiber.Ctx) error {
 		})
 	}
 
-	slog.Info("Landing page", "auth_code", authCode)
+	slog.Info("Login page", "auth_code", authCode)
 
 	// Retrieve the AuthorizationRequest from the application authentication session
 	authProcess, err := s.getAuthProcess(authCode)
@@ -199,9 +199,9 @@ func (s *Server) LandingPage(c *fiber.Ctx) error {
 	data := map[string]any{
 		"authCode": authProcess.Code,
 	}
-	slog.Debug("Landing page", "data", data)
+	slog.Debug("Login page", "data", data)
 
-	return s.html.Render(c, "landing", data)
+	return s.html.Render(c, "login", data)
 
 }
 
@@ -288,7 +288,7 @@ func (s *Server) WalletLoginPage(c *fiber.Ctx) error {
 	slog.Info("Wallet authentication request created", "wallet_auth_request", walletAuthRequest)
 
 	// Present a screen with the QR code to be scanned by the Wallet
-	data, err := renderLogin(verifierURL, authCode)
+	data, err := renderWalletLogin(verifierURL, authCode)
 	if err != nil {
 		return errl.Errorf("failed to render login page: %w", err)
 	}
@@ -297,7 +297,7 @@ func (s *Server) WalletLoginPage(c *fiber.Ctx) error {
 
 }
 
-func renderLogin(verifierURL string, authRequestID string) (map[string]any, error) {
+func renderWalletLogin(verifierURL string, authRequestID string) (map[string]any, error) {
 
 	// Get our URL defined in the config
 
@@ -699,11 +699,8 @@ func (s *Server) validateAuthorizationRequest(req *models.AuthorizationRequest) 
 	if req.RedirectURI == "" {
 		return errl.Errorf("missing redirect_uri")
 	}
-	if !strings.Contains(req.Scope, "openid") {
+	if !slices.Contains(req.Scopes, "openid") {
 		return errl.Errorf("openid scope required")
-	}
-	if !strings.Contains(req.Scope, "eidas") {
-		return errl.Errorf("eidas scope required")
 	}
 	return nil
 }
@@ -785,7 +782,7 @@ func (s *Server) generateAuthCode(req *models.AuthorizationRequest, rp *models.R
 		RedirectURI: req.RedirectURI,
 		State:       req.State,
 		Nonce:       req.Nonce,
-		Scope:       req.Scope,
+		Scopes:      req.Scopes,
 		CreatedAt:   time.Now(),
 		ExpiresAt:   time.Now().Add(10 * time.Minute),
 	}
@@ -826,7 +823,7 @@ func (s *Server) generateTokens(authProcess *models.AuthProcess, rp *models.Rely
 			"access_token": tokenString,
 			"token_type":   "Bearer",
 			"expires_in":   rp.TokenExpiry,
-			"scope":        authProcess.Scope,
+			"scope":        strings.Join(authProcess.Scopes, " "),
 			"id_token":     idToken,
 		}, nil
 
@@ -850,7 +847,7 @@ func (s *Server) generateTokens(authProcess *models.AuthProcess, rp *models.Rely
 			"access_token": tokenString,
 			"token_type":   "Bearer",
 			"expires_in":   rp.TokenExpiry,
-			"scope":        authProcess.Scope,
+			"scope":        strings.Join(authProcess.Scopes, " "),
 			"id_token":     idToken,
 		}, nil
 

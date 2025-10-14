@@ -3,6 +3,7 @@ package jwtservice
 import (
 	"crypto/rand"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/evidenceledger/certauth/internal/models"
@@ -89,16 +90,16 @@ const at_template = `{
   "client_id": "https://verifier.dome-marketplace-sbx.org"
 }`
 
-func (s *JWTService) GenerateAccessTokenForCert(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
+func (s *JWTService) GenerateAccessTokenForCert(authProcess *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
 	now := time.Now()
 
 	iss := s.issuer
-	sub := authCode.ClientID
+	sub := authProcess.ClientID
 	aud := rp.ClientID
 	exp := now.Add(time.Duration(rp.TokenExpiry) * time.Second).Unix()
 	iat := now.Unix()
-	nonce := authCode.Nonce
-	scope := authCode.Scope
+	nonce := authProcess.Nonce
+	scope := strings.Join(authProcess.Scopes, " ")
 	jti := rand.Text()
 
 	// Standard claims
@@ -117,14 +118,14 @@ func (s *JWTService) GenerateAccessTokenForCert(authCode *models.AuthProcess, ce
 	mandatee := map[string]any{
 		"id":         certData.Subject.SerialNumber,
 		"employeeId": certData.Subject.SerialNumber,
-		"email":      authCode.Email,
+		"email":      authProcess.Email,
 		"firstName":  certData.Subject.GivenName,
 		"lastName":   certData.Subject.Surname,
 	}
 
 	mandator := map[string]any{
 		"id":                     "did:elsi:" + certData.Subject.OrganizationIdentifier,
-		"email":                  authCode.Email,
+		"email":                  authProcess.Email,
 		"commonName":             certData.Subject.CommonName,
 		"organization":           certData.Subject.Organization,
 		"organizationIdentifier": certData.Subject.OrganizationIdentifier,
@@ -204,16 +205,16 @@ func (s *JWTService) GenerateAccessTokenForCert(authCode *models.AuthProcess, ce
 	return tokenString, nil
 }
 
-func (s *JWTService) GenerateAccessTokenForCredential(authCode *models.AuthProcess, cred map[string]any, rp *models.RelyingParty) (string, error) {
+func (s *JWTService) GenerateAccessTokenForCredential(authProcess *models.AuthProcess, cred map[string]any, rp *models.RelyingParty) (string, error) {
 	now := time.Now()
 
 	iss := s.issuer
-	sub := authCode.ClientID
+	sub := authProcess.ClientID
 	aud := rp.ClientID
 	exp := now.Add(time.Duration(rp.TokenExpiry) * time.Second).Unix()
 	iat := now.Unix()
-	nonce := authCode.Nonce
-	scope := authCode.Scope
+	nonce := authProcess.Nonce
+	scope := strings.Join(authProcess.Scopes, " ")
 	jti := rand.Text()
 
 	// Standard claims

@@ -1,142 +1,75 @@
-<!DOCTYPE html>
-<html>
-
-<head>
-    <meta name="viewport" content="width=device-width, initial-scale=1">
-
-    <title>ISBE Onboarding</title>
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/fomantic-ui@2.9.3/dist/semantic.min.css">
-    <style>
-        body {
-            background: #f5f5f5;
-            padding: 40px 0;
-        }
-        .main.container {
-            margin-top: 40px;
-            margin-bottom: 40px;
-        }
-        .token-info {
-            font-family: monospace;
-            font-size: 13px;
-            word-break: break-all;
-        }
-    </style>
-</head>
+{{template "partials/preamble"}}
 
 <body>
-    <div class="ui main text container">
-        <div class="ui clearing segment">
-            <h1 class="ui left floated header">
-                Welcome to your ISBE private area
-            </h1>
-            <a href="/logout" class="ui right floated red button">
-                <i class="sign-out icon"></i> Logout
+    {{template "partials/logobar" "logout_button"}}
+
+    <div class="ui hidden divider"></div>
+
+    <div class="ui container" style="max-width: 800px;">
+
+        <div class="ui huge header">Bienvenido a ISBE</div>
+
+        <p>Estos son los datos que tenemos registrados sobre tí:</p>
+
+        <div class="ui segment">
+
+            <div class="ui form">
+                <div class="two fields">
+                    <div class="five wide field">
+                        <label>Identificador</label>
+                        <input type="text" placeholder="Identificador organización"
+                            value="{{ .subject.OrganizationIdentifier }}" readonly>
+                    </div>
+                    <div class="eleven wide field">
+                        <label>Organización</label>
+                        <input type="text" placeholder="Nombre organización" value="{{ .subject.Organization }}"
+                            readonly>
+                    </div>
+                </div>
+                <div class="four fields">
+                    <div class="five wide field">
+                        <label>Calle</label>
+                        <input type="text" placeholder="Calle" value="{{ .subject.StreetAddress }}" readonly>
+                    </div>
+                    <div class="five wide field">
+                        <label>Ciudad</label>
+                        <input type="text" placeholder="Ciudad" value="{{ .subject.Locality }}" readonly>
+                    </div>
+                    <div class="four wide field">
+                        <label>Provincia</label>
+                        <input type="text" placeholder="Provincia" value="{{ .subject.Province }}" readonly>
+                    </div>
+                    <div class="two wide field">
+                        <label>País</label>
+                        <input type="text" placeholder="País" value="{{ .subject.Country }}" readonly>
+                    </div>
+                </div>
+                <div class="two fields">
+                    <div class="five wide field">
+                        <label>Email</label>
+                        <input type="text" placeholder="Correo electrónico" value="{{ .subject.Email }}" readonly>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <h2 class="ui header">
+            Ahora que estás con nosotros, puedes explorar las cosas que puedes hacer.
+        </h2>
+
+        <div class="ui hidden divider"></div>
+
+        <div class="ui grid">
+            <a class="eight wide column" href="https://isbecatalog.netlify.app">
+                <div class="ui raised segment" style="background-color:#ff7e5680;" >
+                    <h4 class="ui header">Catálogo ISBE</h4>
+                    <p style="color:black">El Catálogo ISBE es un catálogo de servicios digitales basados en Blockchain y que están disponibles en las redes ISBE.</p>
+                </div>
             </a>
         </div>
 
-        <div class="ui positive message">
-            <div class="header">
-                <i class="check circle icon"></i>
-                Authentication Successful!
-            </div>
-            <div class="ui list">
-                <div class="item"><strong>User ID:</strong> {{ .subject.OrganizationIdentifier }}</div>
-                <div class="item"><strong>Session ID:</strong> {{ .session.SessionID }}</div>
-                <div class="item"><strong>Login Time:</strong> {{ .session.CreatedAt }}</div>
-                <div class="item"><strong>Last Accessed:</strong> {{ .session.LastAccessed }}</div>
-            </div>
-        </div>
-
-
-        <div class="ui teal segment">
-
-            {{ if .subject.OrganizationIdentifier }}
-            <h3 class="ui header"><i class="building icon"></i>Organization Certificate (from ID Token)</h3>
-            {{ else }}
-            <h3 class="ui header"><i class="user icon"></i>Personal Certificate (from ID Token)</h3>
-            {{ end }}
-
-            <div class="ui list">
-
-                {{ if .subject.OrganizationIdentifier }}
-                <div class="item"><strong>Organization Identifier:</strong> {{ .subject.OrganizationIdentifier }}</div>
-                {{ end }}
-
-                {{ if .subject.Organization }}
-                <div class="item"><strong>Organization:</strong> {{ .subject.Organization }}</div>
-                {{ end }}
-
-                {{ if .subject.OrganizationalUnit }}
-                <div class="item"><strong>Organizational Unit:</strong> {{ .subject.OrganizationalUnit }}</div>
-                {{ end }}
-
-                {{ if .subject.CommonName }}
-                <div class="item"><strong>Common Name:</strong> {{ .subject.CommonName }}</div>
-                {{ end }}
-
-                {{ if .subject.SerialNumber }}
-                <div class="item"><strong>Serial Number:</strong> {{ .subject.SerialNumber }}</div>
-                {{ end }}
-
-                {{ if .subject.Email }}
-                <div class="item"><strong>Email:</strong> {{ .subject.Email }}</div>
-                {{ end }}
-
-                {{ if .subject.Locality }}
-                <div class="item"><strong>Locality:</strong> {{ .subject.Locality }}</div>
-                {{ end }}
-
-                {{ if .subject.Province }}
-                <div class="item"><strong>Province:</strong> {{ .subject.Province }}</div>
-                {{ end }}
-
-                {{ if .subject.StreetAddress }}
-                <div class="item"><strong>Street Address:</strong> {{ .subject.StreetAddress }}</div>
-                {{ end }}
-
-                {{ if .subject.PostalCode }}
-                <div class="item"><strong>Postal Code:</strong> {{ .subject.PostalCode }}</div>
-                {{ end }}
-
-                {{ if .subject.Country }}
-                <div class="item"><strong>Country:</strong> {{ .subject.Country }}</div>
-                {{ end }}
-
-                {{ if .subject.ValidFromStr }}
-                <div class="item"><strong>Valid From:</strong> {{ .subject.ValidFromStr }}</div>
-                {{ end }}
-
-                {{ if .subject.ValidToStr }}
-                <div class="item"><strong>Valid To:</strong> {{ .subject.ValidToStr }}</div>
-                {{ end }}
-
-            </div>
-        </div>
-
-
-        <div class="ui segment">
-            <h3 class="ui header"><i class="key icon"></i> Access Token</h3>
-            <div class="token-info">{{ .session.AccessToken }}</div>
-        </div>
-
-        <div class="ui segment">
-            <h3 class="ui header"><i class="id badge icon"></i> ID Token</h3>
-            <div class="token-info">{{ .session.IDToken }}</div>
-        </div>
-
-        <div class="ui yellow message">
-            <div class="header">
-                <i class="info circle icon"></i>
-                How This Works
-            </div>
-            <p>In a real implementation:</p>
-            <ul class="ui list">
-                <li>The ID Token would be a JWT containing the certificate information</li>
-                <li>The RP would validate the JWT signature</li>
-                <li>The certificate data would be extracted from the JWT claims</li>
-                <li>This data can be used to identify the user and their organization</li>
-            </ul>
-        </div>
     </div>
+
     <script src="https://cdn.jsdelivr.net/npm/fomantic-ui@2.9.3/dist/semantic.min.js"></script>
 </body>
+{{template "partials/postamble"}}
