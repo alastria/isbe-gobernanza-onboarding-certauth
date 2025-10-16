@@ -391,6 +391,8 @@ func (s *Server) APIWalletAuthenticationRequest(c *fiber.Ctx) error {
 		})
 	}
 
+	slog.Info("sending back the WalletAuthentication request")
+
 	// Get the Wallet AuthRequest
 	walletAuthRequest := authProcess.WalletAuthRequest
 

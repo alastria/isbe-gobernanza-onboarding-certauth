@@ -65,6 +65,7 @@ func (s *Server) createJWTSecuredAuthenticationRequest(response_uri string, stat
 	// As per the OID4VP
 	header := map[string]any{
 		"typ": "oauth-authz-req+jwt",
+		"kid": s.jwtService.IssuerDID(),
 	}
 
 	tokenString, err := s.jwtService.GenerateToken(header, claims)

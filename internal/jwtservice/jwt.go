@@ -11,6 +11,7 @@ import (
 	"maps"
 	"time"
 
+	"github.com/evidenceledger/certauth/internal/didkey"
 	"github.com/evidenceledger/certauth/internal/errl"
 	"github.com/evidenceledger/certauth/internal/jpath"
 	"github.com/evidenceledger/certauth/internal/models"
@@ -24,6 +25,7 @@ type JWTService struct {
 	privateKey *ecdsa.PrivateKey
 	publicKey  *ecdsa.PublicKey
 	issuer     string
+	issuerdid  string
 }
 
 // NewService creates a new JWT service
@@ -39,11 +41,18 @@ func NewService(issuer string) (*JWTService, error) {
 
 	publicKey := &privateKey.PublicKey
 
+	// Create a did:key associated to the private key
+	did, _, err := didkey.GenDIDKey(privateKey)
+	if err != nil {
+		return nil, errl.Errorf("failed to generate DID key: %w", err)
+	}
+
 	slog.Info("JWT service initialized", "issuer", issuer)
 	return &JWTService{
 		privateKey: privateKey,
 		publicKey:  publicKey,
 		issuer:     issuer,
+		issuerdid:  did,
 	}, nil
 }
 
@@ -300,6 +309,11 @@ func (s *JWTService) GenerateToken(header map[string]any, claims jwt.Claims) (st
 // Issuer returns the issuer of the JWT
 func (s *JWTService) Issuer() string {
 	return s.issuer
+}
+
+// IssuerDID return the DID associated to the issuer
+func (s *JWTService) IssuerDID() string {
+	return s.issuerdid
 }
 
 // ParseSSOCookieToken parses a JWT token from the SSO cookie
