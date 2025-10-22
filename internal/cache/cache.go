@@ -8,10 +8,13 @@ import (
 
 // Cache stores arbitrary data with expiration time.
 type Cache struct {
-	items           sync.Map
-	counter         atomic.Uint32
-	defaultDuration time.Duration
+	items                        sync.Map
+	counter                      atomic.Uint32
+	defaultDuration              time.Duration
+	defaultExpirationCheckPeriod uint32
 }
+
+const defaultExpirationPeriod = 100
 
 // An item represents arbitrary data with expiration time.
 type item struct {
@@ -28,15 +31,19 @@ func New(defaultDuration time.Duration) *Cache {
 	}
 
 	cache := &Cache{
-		defaultDuration: defaultDuration,
+		defaultDuration:              defaultDuration,
+		defaultExpirationCheckPeriod: defaultExpirationPeriod,
 	}
 
 	return cache
 }
 
 // Set sets a value for the given key with an expiration duration.
-// If the duration is 0 or less, it will be stored forever.
+// If the duration is less than 0, it will be stored forever.
+// If the duration is 0, the default expiration time will be used
 func (cache *Cache) Set(key string, value any, duration time.Duration) {
+
+	// A zero value means no expiration
 	var expires int64
 
 	if duration == 0 {
@@ -56,7 +63,7 @@ func (cache *Cache) Set(key string, value any, duration time.Duration) {
 	// The following instructions are not synchronized, but we do not care as long as DeleteExpired() is called
 	// "approximately" every 100 writes.
 	count := cache.counter.Add(1)
-	if count >= 100 {
+	if count >= cache.defaultExpirationCheckPeriod {
 		cache.DeleteExpired()
 		cache.counter.Store(0)
 	}
@@ -73,7 +80,9 @@ func (cache *Cache) Get(key string) (any, bool) {
 	item := obj.(item)
 
 	if item.expires > 0 && time.Now().UnixNano() > item.expires {
-		cache.items.Delete(key)
+		// Use the fact that the caller is going to get an expiration error to check for entries which have expired.
+		// This opportunistic expiration strategy impacts latency of the error case but seems an acceptable compromise.
+		cache.DeleteExpired()
 		return nil, false
 	}
 

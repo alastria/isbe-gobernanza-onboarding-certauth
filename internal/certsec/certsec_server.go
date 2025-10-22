@@ -14,6 +14,7 @@ import (
 	"github.com/evidenceledger/certauth/internal/cache"
 	"github.com/evidenceledger/certauth/internal/certconfig"
 	"github.com/evidenceledger/certauth/internal/database"
+	"github.com/evidenceledger/certauth/internal/errl"
 	"github.com/evidenceledger/certauth/internal/models"
 	"github.com/evidenceledger/certauth/internal/util/x509util"
 )
@@ -82,29 +83,19 @@ func (s *Server) handleCertificateAuth(c *fiber.Ctx) error {
 		})
 	}
 
-	// // Retrieve the AuthorizationRequest associated with the authCode
-	// authCodeObj, err := s.db.GetAuthCode(authCode)
-	// if err != nil {
-	// 	slog.Error("Failed to retrieve authorization code from DB", "error", err)
-	// 	return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-	// 		"error": "Internal server error",
-	// 	})
-	// }
-	// if authCodeObj == nil {
-	// 	slog.Error("Authorization code not found in DB", "auth_code", authCode)
-	// 	return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-	// 		"error": "Invalid authorization code",
-	// 	})
-	// }
-
 	slog.Info("Certificate authentication requested", "auth_code", authCode)
+
+	sendBackError := func(err error) error {
+		// Redirect back to certauth with an error
+		authProcess.ErrorInProcess = err
+		redirectURL := s.cfg.CertAuthURL + "/certificate-back?code=" + authCode + "&error=true"
+		return c.Status(fiber.StatusFound).Redirect(redirectURL)
+	}
 
 	// Get the certificate from the TLS connection
 	certHeader := c.Get("tls-client-certificate")
 	if certHeader == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "No certificate provided",
-		})
+		return sendBackError(errl.Errorf("No certificate provided"))
 	}
 
 	slog.Info("Certificate received", "auth_code", authCode, "cert_length", len(certHeader))
@@ -112,25 +103,22 @@ func (s *Server) handleCertificateAuth(c *fiber.Ctx) error {
 	// Parse the certificate using the existing x509util function
 	cert, issuer, subject, err := x509util.ParseEIDASCertB64Der(certHeader)
 	if err != nil {
-		slog.Error("Failed to parse certificate", "error", err, "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid certificate format",
-		})
+		return sendBackError(errl.Errorf("Failed to parse certificate: %w", err))
+	}
+
+	// For testing we accept personal certificates, but we do not accept that both
+	// the organizationIdentifier and the serialNumber are empty.
+	if subject.OrganizationIdentifier == "" && subject.SerialNumber == "" {
+		return sendBackError(errl.Errorf("Both organizationIdentifier and serialNumber are empty"))
 	}
 
 	// Check certificate expiration
 	now := time.Now()
 	if now.Before(cert.NotBefore) {
-		slog.Error("Certificate not yet valid", "not_before", cert.NotBefore, "current_time", now, "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Certificate not yet valid",
-		})
+		return sendBackError(errl.Errorf("Certificate not yet valid, not_before: %s", cert.NotBefore.Format(time.RFC3339)))
 	}
 	if now.After(cert.NotAfter) {
-		slog.Error("Certificate expired", "not_after", cert.NotAfter, "current_time", now, "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Certificate is expired",
-		})
+		return sendBackError(errl.Errorf("Certificate expired not_after: %s", cert.NotAfter.Format(time.RFC3339)))
 	}
 
 	// Determine certificate type
@@ -169,13 +157,11 @@ func (s *Server) handleCertificateAuth(c *fiber.Ctx) error {
 		OrganizationID:  subject.OrganizationIdentifier,
 		CertificateType: certType,
 		Certificate:     cert,
+		CertificateDER:  certHeader,
 	}
 
 	// Set the certificate data in the auth request for later retrieval
 	authProcess.CertificateData = certData
-
-	// // Store the certificate data in the cache
-	// s.cache.Set(authCode, certData, 0)
 
 	// Redirect back to certauth
 	redirectURL := s.cfg.CertAuthURL + "/certificate-back?code=" + authCode

@@ -31,15 +31,15 @@ func main() {
 	flag.StringVar(&adminPassword, "admin-password", "", "Admin password for the server")
 
 	// The URL and port for the CertAuth server, which is the OP url also
-	flag.StringVar(&certauthPort, "certauth-port", "8090", "Port for the main OP server")
+	flag.StringVar(&certauthPort, "certauth-port", "8010", "Port for the main OP server")
 	flag.StringVar(&certauthURL, "certauth-url", "", "URL for the CertAuth server")
 
 	// The URL and port for the CertSec server, the one asking for the certificate via TLS client authentication
-	flag.StringVar(&certsecPort, "certsec-port", "8091", "Port for the CertSec server")
+	flag.StringVar(&certsecPort, "certsec-port", "8011", "Port for the CertSec server")
 	flag.StringVar(&certsecURL, "certsec-url", "", "URL for the CertSec server")
 
 	// The URL and port for the Onboard server, the example RP
-	flag.StringVar(&onboardPort, "onboard-port", "8092", "Port for the Onboard server")
+	flag.StringVar(&onboardPort, "onboard-port", "8012", "Port for the Onboard server")
 	flag.StringVar(&onboardURL, "onboard-url", "", "URL for the Onboard server")
 
 	flag.Parse()

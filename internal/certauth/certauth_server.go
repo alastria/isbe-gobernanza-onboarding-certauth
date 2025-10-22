@@ -149,7 +149,7 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	s.app.Post("/verify-email-code", s.handleVerifyEmailCode)
 
 	// Handle consent received, generation of SSO cookie and redirection to Relying Party
-	s.app.Post("/consent", s.handleConsent)
+	s.app.Post("/consent", s.handleCertificateConsent)
 
 	// *******************************************************
 	// *******************************************************

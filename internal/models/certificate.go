@@ -16,4 +16,5 @@ type CertificateData struct {
 	ValidTo         time.Time          `json:"valid_to"`
 	CertificateType string             `json:"certificate_type"` // "organizational" or "personal"
 	Certificate     *x509.Certificate  `json:"certificate"`
+	CertificateDER  string             `json:"certificate_der"`
 }
