@@ -38,7 +38,7 @@ func (d *Database) initializeTestData() error {
 		slog.Error("Failed to create ISBE Onboarding RP", "error", err)
 	}
 
-	// Add ISBE Onboarding RP
+	// Add development ISBE Onboarding RP
 	testOnboardRP := &models.RelyingParty{
 		Name:        "ISBE Onboarding",
 		Description: "The ISBE Onboarding Application",
@@ -50,6 +50,22 @@ func (d *Database) initializeTestData() error {
 	}
 
 	if err := d.CreateRelyingParty(testOnboardRP, "isbesecret"); err != nil {
+		slog.Error("Failed to create ISBE Onboarding RP", "error", err)
+	}
+
+
+	// Add development ISBE Onboarding RP
+	testIssuerRP := &models.RelyingParty{
+		Name:        "ISBE Issuer for test",
+		Description: "The ISBE Credential Issuer Application",
+		ClientID:    "https://issuer.mycredential.eu",
+		RedirectURL: "https://issuer.mycredential.eu/lear/auth/callback",
+		OriginURL:   "https://issuer.mycredential.eu",
+		Scopes:      "openid eidas",
+		TokenExpiry: 3600,
+	}
+
+	if err := d.CreateRelyingParty(testIssuerRP, "isbesecret"); err != nil {
 		slog.Error("Failed to create ISBE Onboarding RP", "error", err)
 	}
 

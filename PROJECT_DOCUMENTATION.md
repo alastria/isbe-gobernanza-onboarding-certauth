@@ -156,19 +156,6 @@ CREATE TABLE relying_parties (
 )
 ```
 
-#### Authentication Attempts Table
-```sql
-CREATE TABLE authentication_attempts (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    auth_code TEXT UNIQUE NOT NULL,
-    client_id TEXT NOT NULL,
-    redirect_uri TEXT NOT NULL,
-    state TEXT NOT NULL,
-    nonce TEXT,
-    scope TEXT,
-    created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-)
-```
 
 ### Security Considerations
 - **Client Secrets**: Hashed using bcrypt with default cost

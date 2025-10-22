@@ -51,6 +51,7 @@ type AuthProcess struct {
 	WalletAuthRequest     string           `json:"wallet_auth_request,omitempty"`
 	CredentialData        map[string]any   `json:"credential_data,omitempty"`
 	FinishedWalletAuth    bool             `json:"finished_wallet_auth,omitempty"`
+	ErrorInProcess        error            `json:"-"`
 }
 
 // SSOSession represents a single sign-on session, stored in-memory in the server

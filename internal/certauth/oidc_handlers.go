@@ -75,28 +75,36 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 	)
 
 	// Validate request
-	if err := s.validateAuthorizationRequest(authReq); err != nil {
-		return s.handleAuthorizationError(c, authReq, errl.Errorf("invalid authorization request: %w", err))
+	if errorCode, errorDesc := s.validateAuthorizationRequest(authReq); errorCode != "" {
+		return s.handleAuthorizationError(c, authReq.RedirectURI, authReq.State, errorCode, errorDesc)
 	}
 
 	// The relying party must have been registered previously
 	rp, err := s.db.GetRelyingParty(authReq.ClientID)
 	if err != nil {
-		return s.handleAuthorizationError(c, authReq, errl.Errorf("database error: %w", err))
+		errorCode := "server_error"
+		errorDesc := errl.Errorf("database error: %w", err).Error()
+		return s.handleAuthorizationError(c, authReq.RedirectURI, authReq.State, errorCode, errorDesc)
 	}
 	if rp == nil {
-		return s.handleAuthorizationError(c, authReq, errl.Errorf("invalid client_id"))
+		errorCode := "unauthorized_client"
+		errorDesc := "invalid client_id"
+		return s.handleAuthorizationError(c, authReq.RedirectURI, authReq.State, errorCode, errorDesc)
 	}
 
 	// Validate redirect_uri matches registered RP redirect URL
 	// For security reasons, the redirect_uri must be the same as the one that was registered
 	if authReq.RedirectURI != rp.RedirectURL {
-		return s.handleAuthorizationError(c, authReq, errl.Errorf("redirect_uri mismatch"))
+		errorCode := "invalid_request"
+		errorDesc := "invalid redirect_uri"
+		return s.handleAuthorizationError(c, authReq.RedirectURI, authReq.State, errorCode, errorDesc)
 	}
 
 	// Check if certificate authentication is requested with scope 'eidas', 'onlyeidas' or 'learcred'
 	if !slices.Contains(authReq.Scopes, "eidas") && !slices.Contains(authReq.Scopes, "onlyeidas") && !slices.Contains(authReq.Scopes, "learcred") {
-		return s.handleAuthorizationError(c, authReq, errl.Errorf("eidas or learcred scopes required"))
+		errorCode := "invalid_scope"
+		errorDesc := "the server requires scope eidas, onlyeidas or learcred"
+		return s.handleAuthorizationError(c, authReq.RedirectURI, authReq.State, errorCode, errorDesc)
 	}
 
 	// Check if we received the SSO cookie that we generated in a possible recent authentication
@@ -177,23 +185,12 @@ func (s *Server) Authorization(c *fiber.Ctx) error {
 func (s *Server) LoginPage(c *fiber.Ctx) error {
 	slog.Info("Login page", "from", c.Hostname(), "to", c.IP())
 
-	// Get auth code from query parameter
-	authCode := c.Query("code")
-	if authCode == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Missing authorization code",
-		})
-	}
-
-	slog.Info("Login page", "auth_code", authCode)
-
 	// Retrieve the AuthorizationRequest from the application authentication session
-	authProcess, err := s.getAuthProcess(authCode)
+	authProcess, err := s.getAuthProcess(c.Query("code"))
 	if err != nil {
-		slog.Error("Invalid authorization code", "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": errl.Errorf("Invalid authorization code").Error(),
-		})
+		err := errl.Errorf("getAuthProcess: %w", err)
+		slog.Error(err.Error())
+		return s.html.Render(c, "error", fiber.Map{"message": err})
 	}
 
 	data := map[string]any{
@@ -208,23 +205,12 @@ func (s *Server) LoginPage(c *fiber.Ctx) error {
 func (s *Server) CertLoginPage(c *fiber.Ctx) error {
 	slog.Info("CertLoginPage", "from", c.Hostname(), "to", c.IP())
 
-	// Get auth code from query parameter
-	authCode := c.Query("code")
-	if authCode == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Missing authorization code",
-		})
-	}
-
-	slog.Info("CertLoginPage", "auth_code", authCode)
-
 	// Retrieve the AuthorizationRequest from the application authentication session
-	authProcess, err := s.getAuthProcess(authCode)
+	authProcess, err := s.getAuthProcess(c.Query("code"))
 	if err != nil {
-		slog.Error("Invalid authorization code", "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": errl.Errorf("Invalid authorization code").Error(),
-		})
+		err := errl.Errorf("getAuthProcess: %w", err)
+		slog.Error(err.Error())
+		return s.html.Render(c, "error", fiber.Map{"message": err})
 	}
 
 	// Present the screen informing the user about the next step
@@ -238,23 +224,13 @@ func (s *Server) CertLoginPage(c *fiber.Ctx) error {
 func (s *Server) WalletLoginPage(c *fiber.Ctx) error {
 	slog.Info("Landing page", "from", c.Hostname(), "to", c.IP())
 
-	// Get auth code from query parameter
-	authCode := c.Query("code")
-	if authCode == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Missing authorization code",
-		})
-	}
-
-	slog.Info("Landing page", "auth_code", authCode)
-
 	// Retrieve the AuthorizationRequest from the application authentication session
+	authCode := c.Query("code")
 	authProcess, err := s.getAuthProcess(authCode)
 	if err != nil {
-		slog.Error("Invalid authorization code", "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": errl.Errorf("Invalid authorization code").Error(),
-		})
+		err := errl.Errorf("getAuthProcess: %w", err)
+		slog.Error(err.Error())
+		return s.html.Render(c, "error", fiber.Map{"message": err})
 	}
 
 	verifierURL := s.cfg.CertAuthURL
@@ -275,11 +251,9 @@ func (s *Server) WalletLoginPage(c *fiber.Ctx) error {
 	// In this way, when the Wallet sends the OID4VP AuthResponse, we will be able to match the Wallet response with the RP request.
 	walletAuthRequest, err := s.createJWTSecuredAuthenticationRequest(response_uri, authCode)
 	if err != nil {
-		err := errl.Errorf("failed to create wallet authentication request: %w", err)
-		slog.Error(err.Error())
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+		errorCode := "server_error"
+		errorDesc := errl.Errorf("failed to create wallet authentication request: %w", err).Error()
+		return s.handleAuthorizationError(c, authProcess.RedirectURI, authProcess.State, errorCode, errorDesc)
 	}
 
 	// Store in our authentication process object
@@ -290,7 +264,9 @@ func (s *Server) WalletLoginPage(c *fiber.Ctx) error {
 	// Present a screen with the QR code to be scanned by the Wallet
 	data, err := renderWalletLogin(verifierURL, authCode)
 	if err != nil {
-		return errl.Errorf("failed to render login page: %w", err)
+		errorCode := "server_error"
+		errorDesc := errl.Errorf("failed to render login page: %w", err).Error()
+		return s.handleAuthorizationError(c, authProcess.RedirectURI, authProcess.State, errorCode, errorDesc)
 	}
 
 	return s.html.Render(c, "wallet_login", data)
@@ -374,21 +350,12 @@ func (s *Server) APIWalletPoll(c *fiber.Ctx) error {
 // OID4VP Authentication Request object
 func (s *Server) APIWalletAuthenticationRequest(c *fiber.Ctx) error {
 
-	// Get state from query parameter
-	authReqId := c.Query("state")
-	if authReqId == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Missing state value",
-		})
-	}
-
-	// Retrieve the Authentication Process object from the cache
-	authProcess, err := s.getAuthProcess(authReqId)
+	// Retrieve the AuthorizationRequest from the application authentication session
+	authProcess, err := s.getAuthProcess(c.Query("state"))
 	if err != nil {
-		slog.Error("Invalid state", "state", authReqId)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": errl.Errorf("Invalid authorization code").Error(),
-		})
+		err := errl.Errorf("getAuthProcess for state: %w", err)
+		slog.Error(err.Error())
+		return s.html.Render(c, "error", fiber.Map{"message": err})
 	}
 
 	slog.Info("sending back the WalletAuthentication request")
@@ -406,24 +373,16 @@ func (s *Server) APIWalletAuthenticationResponse(c *fiber.Ctx) error {
 
 	// Get state from query parameter
 	authReqId := c.FormValue("state")
-	if authReqId == "" {
-		slog.Error("Mising state", "state", authReqId)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Missing state value",
-		})
-	}
 
 	// Retrieve the Authentication Process object from the cache
 	authProcess, err := s.getAuthProcess(authReqId)
 	if err != nil {
-		slog.Error("Invalid state", "state", authReqId)
+		err := errl.Errorf("getAuthProcess for state: %w", err)
+		slog.Error(err.Error())
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": errl.Errorf("Invalid authorization code").Error(),
+			"error": "Missing vp_token",
 		})
 	}
-
-	// // Get the Wallet AuthRequest
-	// walletAuthRequest := authProcess.WalletAuthRequest
 
 	// The state parameter is used to identify the in-memory AutRequest that was sent to the wallet
 	slog.Info("APIWalletAuthenticationResponse", "stateKey", authReqId)
@@ -559,28 +518,23 @@ func (s *Server) APIWalletAuthenticationResponse(c *fiber.Ctx) error {
 func (s *Server) handleCertificateReceive(c *fiber.Ctx) error {
 	// Get auth code from query parameter
 	authCode := c.Query("code")
-	if authCode == "" {
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Missing authorization code",
-		})
-	}
 
+	// Retrieve the Authentication Process object from the cache
+	authProcess, err := s.getAuthProcess(authCode)
+	if err != nil {
+		err := errl.Errorf("getAuthProcess: %w", err)
+		slog.Error(err.Error())
+		return s.html.Render(c, "error", fiber.Map{"message": err})
+	}
 	slog.Info("Certificate received entry", "auth_code", authCode)
 
-	// Retrieve the AuthorizationRequest from the application authentication session
-	entry, _ := s.cache.Get(authCode)
-	if entry == nil {
-		slog.Error("Authorization code not found in cache", "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Authorization code not found",
-		})
-	}
-
-	authProcess, ok := entry.(*models.AuthProcess)
-	if !ok {
-		slog.Error("Invalid authorization request type in cache", "auth_code", authCode)
-		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
-			"error": "Invalid authorization request",
+	// Check if CertSec returned some error
+	certError := c.Query("error")
+	if certError != "" || authProcess.ErrorInProcess != nil {
+		err := authProcess.ErrorInProcess
+		slog.Error("Error:", "error", err)
+		return s.html.Render(c, "error", fiber.Map{
+			"message": err,
 		})
 	}
 
@@ -698,20 +652,20 @@ func (s *Server) Logout(c *fiber.Ctx) error {
 
 // Helper methods
 
-func (s *Server) validateAuthorizationRequest(req *models.AuthorizationRequest) error {
+func (s *Server) validateAuthorizationRequest(req *models.AuthorizationRequest) (errorCode string, errorDescription string) {
 	if req.ResponseType != "code" {
-		return errl.Errorf("unsupported response_type")
+		return "invalid_request", "unsupported response_type"
 	}
 	if req.ClientID == "" {
-		return errl.Errorf("missing client_id")
+		return "invalid_request", "missing client_id"
 	}
 	if req.RedirectURI == "" {
-		return errl.Errorf("missing redirect_uri")
+		return "invalid_request", "missing redirect_uri"
 	}
 	if !slices.Contains(req.Scopes, "openid") {
-		return errl.Errorf("openid scope required")
+		return "invalid_request", "openid scope required"
 	}
-	return nil
+	return "", ""
 }
 
 func (s *Server) validateTokenAuthorization(c *fiber.Ctx) (clientid string, err error) {
@@ -759,21 +713,16 @@ func (s *Server) validateTokenAuthorization(c *fiber.Ctx) (clientid string, err 
 }
 
 // handleAuthorizationError handles authorization errors by redirecting to the RP with error details
-func (s *Server) handleAuthorizationError(c *fiber.Ctx, req *models.AuthorizationRequest, err error) error {
-	slog.Error("Authorization error", "error", err, "client_id", req.ClientID, "redirect_uri", req.RedirectURI)
+func (s *Server) handleAuthorizationError(c *fiber.Ctx, redirectURI, state, errorCode, errorDescription string) error {
+	slog.Error("Authorization error", "error", errorCode, "redirect_uri", redirectURI)
 
-	errorCode := "invalid_request"
-	if strings.Contains(err.Error(), "client_id") {
-		errorCode = "unauthorized_client"
-	}
-
-	redirectURL, _ := url.Parse(req.RedirectURI)
+	redirectURL, _ := url.Parse(redirectURI)
 	q := redirectURL.Query()
-	q.Set("error", errorCode)
-	q.Set("error_description", err.Error())
-	if req.State != "" {
-		q.Set("state", req.State)
+	if state != "" {
+		q.Set("state", state)
 	}
+	q.Set("error", errorCode)
+	q.Set("error_description", errorDescription)
 	redirectURL.RawQuery = q.Encode()
 
 	return c.Status(fiber.StatusFound).Redirect(redirectURL.String())
@@ -809,6 +758,7 @@ func (s *Server) generateTokens(authProcess *models.AuthProcess, rp *models.Rely
 	}
 
 	if authProcess.CertificateData != nil {
+		// Authentication performed with a certificate
 
 		certData := authProcess.CertificateData
 
@@ -837,6 +787,7 @@ func (s *Server) generateTokens(authProcess *models.AuthProcess, rp *models.Rely
 		}, nil
 
 	} else {
+		// Authentication performed with a Verifiable Credential
 
 		credData := authProcess.CredentialData
 
@@ -883,6 +834,14 @@ func (s *Server) handleRequestEmailVerification(c *fiber.Ctx) error {
 	email := utils.CopyString(c.FormValue("email"))
 	authCode := c.FormValue("auth_code")
 
+	// Retrieve the Authentication Process object from the cache
+	authProcess, err := s.getAuthProcess(authCode)
+	if err != nil {
+		err := errl.Errorf("getAuthProcess: %w", err)
+		slog.Error(err.Error())
+		return s.html.Render(c, "error", fiber.Map{"message": err})
+	}
+
 	if email == "" || authCode == "" {
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Missing email or authorization code",
@@ -897,25 +856,6 @@ func (s *Server) handleRequestEmailVerification(c *fiber.Ctx) error {
 	}
 
 	slog.Info("Email verification requested", "email", email, "auth_code", authCode)
-
-	// Retrieve the AuthorizationRequest associated with the authCode
-	authCodeIntf, _ := s.cache.Get(authCode)
-	if authCodeIntf == nil {
-		err := errl.Errorf("authorization code not found in cache")
-		slog.Error(err.Error(), "auth_code", authCode)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	authProcess, ok := authCodeIntf.(*models.AuthProcess)
-	if !ok {
-		err := errl.Errorf("invalid authorization request type in cache")
-		slog.Error(err.Error(), "auth_code", authCode)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
 
 	certData := authProcess.CertificateData
 	if certData == nil {
@@ -976,23 +916,12 @@ func (s *Server) handleVerifyEmailCode(c *fiber.Ctx) error {
 
 	slog.Info("Email verification code verification requested", "email", email, "auth_code", authCode)
 
-	// Retrieve the AuthProcess associated with the authCode
-	authCodeIntf, _ := s.cache.Get(authCode)
-	if authCodeIntf == nil {
-		err := errl.Errorf("authorization code not found in cache")
-		slog.Error(err.Error(), "auth_code", authCode)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	authProcess, ok := authCodeIntf.(*models.AuthProcess)
-	if !ok {
-		err := errl.Errorf("invalid authorization request type in cache")
-		slog.Error(err.Error(), "auth_code", authCode)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+	// Retrieve the Authentication Process object from the cache
+	authProcess, err := s.getAuthProcess(authCode)
+	if err != nil {
+		err := errl.Errorf("getAuthProcess: %w", err)
+		slog.Error(err.Error())
+		return s.html.Render(c, "error", fiber.Map{"message": err})
 	}
 
 	storedEmailVerificationCode := authProcess.EmailVerificationCode
@@ -1039,10 +968,10 @@ func (s *Server) handleVerifyEmailCode(c *fiber.Ctx) error {
 	})
 }
 
-// handleConsent is the last step, after the user has given consent to proceed.
+// handleCertificateConsent is the last step, after the user has given consent to proceed.
 // We then generate the SSO cookie and redirect to the RP with the auth code.
 // The RP will eventually exchange the auth code for ID and access tokens, which will contain user and certificate data.
-func (s *Server) handleConsent(c *fiber.Ctx) error {
+func (s *Server) handleCertificateConsent(c *fiber.Ctx) error {
 	// Get form data
 	authCode := utils.CopyString(c.FormValue("auth_code"))
 	email := utils.CopyString(c.FormValue("email"))
@@ -1055,23 +984,12 @@ func (s *Server) handleConsent(c *fiber.Ctx) error {
 
 	slog.Info("Consent received from user", "email", email, "auth_code", authCode)
 
-	// Retrieve the AuthProcess associated with the authCode
-	authCodeIntf, _ := s.cache.Get(authCode)
-	if authCodeIntf == nil {
-		err := errl.Errorf("authorization code not found in cache")
-		slog.Error(err.Error(), "auth_code", authCode)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
-	}
-
-	authProcess, ok := authCodeIntf.(*models.AuthProcess)
-	if !ok {
-		err := errl.Errorf("invalid authorization request type in cache")
-		slog.Error(err.Error(), "auth_code", authCode)
-		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
-			"error": err.Error(),
-		})
+	// Retrieve the Authentication Process object from the cache
+	authProcess, err := s.getAuthProcess(authCode)
+	if err != nil {
+		err := errl.Errorf("getAuthProcess: %w", err)
+		slog.Error(err.Error())
+		return s.html.Render(c, "error", fiber.Map{"message": err})
 	}
 
 	storedEmail := authProcess.Email
@@ -1201,6 +1119,9 @@ func (s *Server) generateSSOCookie(ssoSessionID string, certData *models.Certifi
 }
 
 func (s *Server) getAuthProcess(authCode string) (*models.AuthProcess, error) {
+	if authCode == "" {
+		return nil, errl.Errorf("Missing authorization code")
+	}
 
 	// Retrieve the AuthorizationRequest from the application authentication session
 	entry, _ := s.cache.Get(authCode)

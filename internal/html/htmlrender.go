@@ -13,10 +13,6 @@ import (
 	"github.com/gofiber/template/html/v2"
 )
 
-// type Renderer struct {
-// 	engine *html.Engine
-// }
-
 type RendererFiber struct {
 	engine *html.Engine
 }
@@ -82,11 +78,11 @@ func newEngine(templateDebug bool, viewsfs embed.FS, extDir string) (*html.Engin
 
 	// Use external templates if templateDebug is true, otherwise use embedded templates
 	if exists {
-		slog.Info("Using external templates")
+		slog.Info("Using external HTML templates")
 		engine = html.NewFileSystem(http.Dir(extDir), ".hbs")
 		engine.Reload(true)
 	} else {
-		slog.Info("Using embedded templates")
+		slog.Info("Using embedded HTML templates")
 		engine = html.NewFileSystem(http.FS(viewsDir), ".hbs")
 		engine.Reload(true)
 	}

@@ -56,16 +56,6 @@ func (d *Database) createTables() error {
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
-		`CREATE TABLE IF NOT EXISTS authentication_attempts (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
-			auth_code TEXT UNIQUE NOT NULL,
-			client_id TEXT NOT NULL,
-			redirect_uri TEXT NOT NULL,
-			state TEXT NOT NULL,
-			nonce TEXT,
-			scope TEXT,
-			created_at DATETIME DEFAULT CURRENT_TIMESTAMP
-		)`,
 		`CREATE TABLE IF NOT EXISTS registrations (
 		    organization_identifier TEXT UNIQUE NOT NULL,
 			organization TEXT,

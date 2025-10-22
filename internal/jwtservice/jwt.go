@@ -2,8 +2,6 @@ package jwtservice
 
 import (
 	"crypto/ecdsa"
-	"crypto/elliptic"
-	"crypto/rand"
 	"crypto/x509"
 	"encoding/pem"
 	"fmt"
@@ -11,11 +9,13 @@ import (
 	"maps"
 	"time"
 
-	"github.com/evidenceledger/certauth/internal/didkey"
 	"github.com/evidenceledger/certauth/internal/errl"
 	"github.com/evidenceledger/certauth/internal/jpath"
 	"github.com/evidenceledger/certauth/internal/models"
 	"github.com/golang-jwt/jwt/v5"
+
+	ssicrypto "github.com/hesusruiz/eudiw-ssi-go/crypto"
+	didkey "github.com/hesusruiz/eudiw-ssi-go/did/key"
 
 	"github.com/lestrrat-go/jwx/v3/jwk"
 )
@@ -30,34 +30,35 @@ type JWTService struct {
 
 // NewService creates a new JWT service
 func NewService(issuer string) (*JWTService, error) {
+
 	// Generate EC key pair for token signing
 	// This is efemeral and only valid while the server is up.
 	// This is on purpose, as it should be used only to sign short-lived access tokens
 	// If the server fails during an authentication process, the process has to be started from the beginning
-	privateKey, err := ecdsa.GenerateKey(elliptic.P256(), rand.Reader)
-	if err != nil {
-		return nil, errl.Errorf("failed to generate EC key: %w", err)
-	}
 
-	publicKey := &privateKey.PublicKey
-
-	// Create a did:key associated to the private key
-	did, _, err := didkey.GenDIDKey(privateKey)
+	privKey1, did, err := didkey.GenerateDIDKey(ssicrypto.P256)
 	if err != nil {
 		return nil, errl.Errorf("failed to generate DID key: %w", err)
 	}
 
-	slog.Info("JWT service initialized", "issuer", issuer)
+	privKey, ok := privKey1.(ecdsa.PrivateKey)
+	if !ok {
+		return nil, errl.Errorf("failed to generate DID key: %w", err)
+	}
+	privateKey := &privKey
+	publicKey := &privateKey.PublicKey
+
+	slog.Info("JWT service initialized", "issuer", issuer, "did", did.String())
 	return &JWTService{
 		privateKey: privateKey,
 		publicKey:  publicKey,
 		issuer:     issuer,
-		issuerdid:  did,
+		issuerdid:  did.String(),
 	}, nil
 }
 
 // GenerateIDTokenForCert generates an OpenID Connect ID token
-func (s *JWTService) GenerateIDTokenForCert(authCode *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
+func (s *JWTService) GenerateIDTokenForCert(authProcess *models.AuthProcess, certData *models.CertificateData, rp *models.RelyingParty) (string, error) {
 	now := time.Now()
 
 	// Determine the sub identifier based on certificate type
@@ -87,7 +88,7 @@ func (s *JWTService) GenerateIDTokenForCert(authCode *models.AuthProcess, certDa
 		"aud":   rp.ClientID,                                                 // Audience
 		"exp":   now.Add(time.Duration(rp.TokenExpiry) * time.Second).Unix(), // Expiration
 		"iat":   now.Unix(),                                                  // Issued at
-		"nonce": authCode.Nonce,                                              // Nonce (if provided)
+		"nonce": authProcess.Nonce,                                           // Nonce (if provided)
 	}
 
 	// Add standard claims from certificate if available
@@ -103,14 +104,44 @@ func (s *JWTService) GenerateIDTokenForCert(authCode *models.AuthProcess, certDa
 	if certData.Subject.Surname != "" {
 		claims["family_name"] = certData.Subject.Surname
 	}
-	if certData.Subject.EmailAddress != "" {
-		claims["email"] = certData.Subject.EmailAddress
-		claims["email_verified"] = true
+
+	claims["email"] = authProcess.Email
+	claims["email_verified"] = true
+
+	claims["eidas_cert"] = certData.CertificateDER
+
+	claims["organization_identifier"] = certData.Subject.OrganizationIdentifier
+
+	if certData.Subject.Organization != "" {
+		claims["organization"] = certData.Subject.Organization
+	}
+	if certData.Subject.OrganizationalUnit != "" {
+		claims["organizational_unit"] = certData.Subject.OrganizationalUnit
+	}
+	if certData.Subject.CommonName != "" {
+		claims["common_name"] = certData.Subject.CommonName
+	}
+	if certData.Subject.Locality != "" {
+		claims["locality"] = certData.Subject.Locality
+	}
+	if certData.Subject.Province != "" {
+		claims["province"] = certData.Subject.Province
+	}
+	if certData.Subject.StreetAddress != "" {
+		claims["street_address"] = certData.Subject.StreetAddress
+	}
+	if certData.Subject.PostalCode != "" {
+		claims["postal_code"] = certData.Subject.PostalCode
+	}
+	if certData.Subject.SerialNumber != "" {
+		claims["serial_number"] = certData.Subject.SerialNumber
+	}
+	if certData.Subject.Country != "" {
+		claims["country"] = certData.Subject.Country
 	}
 
-	// Add custom elsi_ claims for ETSI standardized fields
-	elsiClaims := s.generateELSIClaims(certData)
-	maps.Copy(claims, elsiClaims)
+	claims["valid_from"] = certData.ValidFrom.Unix()
+	claims["valid_to"] = certData.ValidTo.Unix()
 
 	// Add certificate type information
 	claims["elsi_certificate_type"] = certData.CertificateType
@@ -133,7 +164,7 @@ func (s *JWTService) GenerateIDTokenForCert(authCode *models.AuthProcess, certDa
 	return tokenString, nil
 }
 
-func (s *JWTService) GenerateIDTokenForCredential(authCode *models.AuthProcess, cred map[string]any, rp *models.RelyingParty) (string, error) {
+func (s *JWTService) GenerateIDTokenForCredential(authProcess *models.AuthProcess, cred map[string]any, rp *models.RelyingParty) (string, error) {
 	now := time.Now()
 
 	mandator := jpath.GetMap(cred, "credentialSubject.mandate.mandator")
@@ -160,7 +191,7 @@ func (s *JWTService) GenerateIDTokenForCredential(authCode *models.AuthProcess, 
 		"aud":   rp.ClientID,                                                 // Audience
 		"exp":   now.Add(time.Duration(rp.TokenExpiry) * time.Second).Unix(), // Expiration
 		"iat":   now.Unix(),                                                  // Issued at
-		"nonce": authCode.Nonce,                                              // Nonce (if provided)
+		"nonce": authProcess.Nonce,                                           // Nonce (if provided)
 	}
 
 	claims["name"] = jpath.GetString(mandator, "organization")
@@ -180,6 +211,11 @@ func (s *JWTService) GenerateIDTokenForCredential(authCode *models.AuthProcess, 
 			claims["email_verified"] = true
 		}
 	}
+
+	claims["organization_identifier"] = jpath.GetString(mandator, "organizationIdentifier")
+	claims["organization"] = jpath.GetString(mandator, "organization")
+	claims["organizational_unit"] = jpath.GetString(mandator, "organizationalUnit")
+	claims["common_name"] = jpath.GetString(mandator, "commonName")
 
 	claims["country"] = jpath.GetString(mandator, "country")
 
