@@ -27,7 +27,12 @@ type Server struct {
 	cfg   certconfig.Config
 }
 
-// New creates a new CertSec server
+// New creates a new CertSec server.
+// This is a minimal server which requests a client certificate to the client browser.
+// It is invoked from the CertAuth server, which is the main OpenID Provider
+// supporting eIDAS certificates and Verifiable Credentials.
+// The CerSec server requires a reverse proxy (like Caddy or Nginx) in front, terminating the TLS connection
+// and configured to actually requesting the client certificate.
 func New(db *database.Database, cache *cache.Cache, cfg certconfig.Config) *Server {
 	app := fiber.New(fiber.Config{
 		AppName: "CertSec Certificate Authentication",
@@ -53,13 +58,14 @@ func New(db *database.Database, cache *cache.Cache, cfg certconfig.Config) *Serv
 	return s
 }
 
-// handleCertificateAuth handles the certificate authentication endpoint
+// handleCertificateAuth handles the certificate authentication endpoint.
 // This endpoint receives the certificate from the browser and sends it to the CertAuth server
-// via the global cache
+// via the global cache. Both CertAuth and CerSec must be running in the same process.
 func (s *Server) handleCertificateAuth(c *fiber.Ctx) error {
 	// Get auth code from query parameter
 	authCode := c.Query("code")
 	if authCode == "" {
+		slog.Error("missing authorization code")
 		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{
 			"error": "Missing authorization code",
 		})
@@ -141,6 +147,9 @@ func (s *Server) handleCertificateAuth(c *fiber.Ctx) error {
 	}
 	if subject.OrganizationIdentifier != "" {
 		logFields = append(logFields, "organization_identifier", subject.OrganizationIdentifier)
+	}
+	if subject.SerialNumber != "" {
+		logFields = append(logFields, "serial_number", "************")
 	}
 	if subject.Country != "" {
 		logFields = append(logFields, "country", subject.Country)
