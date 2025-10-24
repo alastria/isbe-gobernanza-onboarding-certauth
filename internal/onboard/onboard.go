@@ -169,6 +169,7 @@ func (s *Server) handleLogin(w http.ResponseWriter, r *http.Request) {
 	})
 
 	// Redirect to the OP for authentication
+	s.oauth2Config.Scopes = []string{oidc.ScopeOpenID, "eidas"}
 	redirectURL := s.oauth2Config.AuthCodeURL(state, oauth2.SetAuthURLParam("nonce", nonce))
 	http.Redirect(w, r, redirectURL, http.StatusFound)
 }
