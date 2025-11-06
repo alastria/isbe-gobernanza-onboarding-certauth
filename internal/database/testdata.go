@@ -10,6 +10,19 @@ import (
 // initializeTestData adds some test data if the database is empty
 func (d *Database) initializeTestData() error {
 
+	// Add Private Area as RP
+	portalRP := &models.RelyingParty{
+		Name:        "ISBE Private Area",
+		Description: "The ISBE Private Area application",
+		ClientID:    "https://idp-isbe.digitelts.com",
+		RedirectURL: "https://idp-isbe.digitelts.com/realms/portal/broker/oidc/endpoint",
+		OriginURL:   "https://idp-isbe.digitelts.com/",
+		Scopes:      "openid eidas",
+		TokenExpiry: 3600,
+	}
+
+	d.CreateRelyingParty(portalRP, "isbesecret")
+
 	// Add Catalog as RP
 	catalogRP := &models.RelyingParty{
 		Name:        "ISBE Catalog",
@@ -52,7 +65,6 @@ func (d *Database) initializeTestData() error {
 	if err := d.CreateRelyingParty(testOnboardRP, "isbesecret"); err != nil {
 		slog.Error("Failed to create ISBE Onboarding RP", "error", err)
 	}
-
 
 	// Add development ISBE Onboarding RP
 	testIssuerRP := &models.RelyingParty{
