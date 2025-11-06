@@ -43,8 +43,8 @@ func (s *Server) handleDiscovery(c *fiber.Ctx) error {
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
 		"id_token_signing_alg_values_supported": []string{"ES256"},
-		"scopes_supported":                      []string{"openid", "eidas", "onlyeidas", "learcred"},
-		"claims_supported":                      []string{"sub", "iss", "aud", "exp", "iat", "name", "given_name", "family_name", "email", "elsi_organization", "elsi_organization_identifier", "elsi_country"},
+		"scopes_supported":                      []string{"openid", "eidas", "learcredential", "learcred"},
+		"claims_supported":                      []string{"sub", "iss", "aud", "exp", "iat", "name", "given_name", "family_name", "email", "organization", "organization_identifier", "country"},
 	})
 }
 
