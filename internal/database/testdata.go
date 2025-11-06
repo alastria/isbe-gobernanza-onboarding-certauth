@@ -15,7 +15,7 @@ func (d *Database) initializeTestData() error {
 		Name:        "ISBE Private Area",
 		Description: "The ISBE Private Area application",
 		ClientID:    "https://idp-isbe.digitelts.com",
-		RedirectURL: "https://idp-isbe.digitelts.com/realms/portal/broker/oidc/endpoint",
+		RedirectURL: "https://idp-isbe.digitelts.com/realms/portal/broker/certificates-idp/endpoint",
 		OriginURL:   "https://idp-isbe.digitelts.com/",
 		Scopes:      "openid eidas",
 		TokenExpiry: 3600,
