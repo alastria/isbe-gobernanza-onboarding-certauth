@@ -111,7 +111,7 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 	// OIDC endpoints
 	s.app.Get(authorization_endpoint, s.Authorization)
 	s.app.Post(token_endpoint, s.handleTokenExchange)
-	s.app.Get(userinfo_endpoint, s.UserInfo)
+	// s.app.Get(userinfo_endpoint, s.UserInfo)
 	s.app.Get("/logout", s.Logout)
 
 	// *******************************************************
