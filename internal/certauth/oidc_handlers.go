@@ -28,17 +28,17 @@ const (
 	oidc_configuration     = "/.well-known/openid-configuration"
 	authorization_endpoint = "/oauth2/auth"
 	token_endpoint         = "/oauth2/token"
-	userinfo_endpoint      = "/oauth2/userinfo"
-	jwks_uri               = "/.well-known/jwks.json"
+	// userinfo_endpoint      = "/oauth2/userinfo"
+	jwks_uri = "/.well-known/jwks.json"
 )
 
 // handleDiscovery handles OIDC discovery endpoint
 func (s *Server) handleDiscovery(c *fiber.Ctx) error {
 	return c.JSON(fiber.Map{
-		"issuer":                                s.cfg.CertAuthURL,
-		"authorization_endpoint":                s.cfg.CertAuthURL + authorization_endpoint,
-		"token_endpoint":                        s.cfg.CertAuthURL + token_endpoint,
-		"userinfo_endpoint":                     s.cfg.CertAuthURL + userinfo_endpoint,
+		"issuer":                 s.cfg.CertAuthURL,
+		"authorization_endpoint": s.cfg.CertAuthURL + authorization_endpoint,
+		"token_endpoint":         s.cfg.CertAuthURL + token_endpoint,
+		// "userinfo_endpoint":                     s.cfg.CertAuthURL + userinfo_endpoint,
 		"jwks_uri":                              s.cfg.CertAuthURL + jwks_uri,
 		"response_types_supported":              []string{"code"},
 		"subject_types_supported":               []string{"public"},
