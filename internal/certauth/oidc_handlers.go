@@ -772,6 +772,7 @@ func (s *Server) generateTokens(authProcess *models.AuthProcess, rp *models.Rely
 		if err != nil {
 			return nil, errl.Errorf("failed to generate access token: %w", err)
 		}
+		slog.Debug("Access Token", "token", tokenString)
 
 		slog.Info("JWT tokens generated with certificate data",
 			"organization_id", certData.OrganizationID,
