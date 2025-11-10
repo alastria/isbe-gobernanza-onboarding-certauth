@@ -12,8 +12,8 @@ func (d *Database) initializeTestData() error {
 
 	// Add the main Private Area as RP
 	portalMainRP := &models.RelyingParty{
-		Name:        "ISBE Private Area",
-		Description: "The ISBE Private Area application",
+		Name:        "ISBE Main Private Area",
+		Description: "The ISBE Main Private Area application",
 		ClientID:    "https://isbe-idp.envs.redisbe.com",
 		RedirectURL: "https://isbe-idp.envs.redisbe.com/auth/realms/dev-isbe/broker/certificado-representante/endpoint",
 		OriginURL:   "https://isbe-idp.envs.redisbe.com/",
