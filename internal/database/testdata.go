@@ -10,6 +10,19 @@ import (
 // initializeTestData adds some test data if the database is empty
 func (d *Database) initializeTestData() error {
 
+	// Add the main Private Area as RP
+	portalMainRP := &models.RelyingParty{
+		Name:        "ISBE Main Private Area",
+		Description: "The ISBE Main Private Area application",
+		ClientID:    "https://isbe-idp.envs.redisbe.com",
+		RedirectURL: "https://isbe-idp.envs.redisbe.com/auth/realms/dev-isbe/broker/certificado-representante/endpoint",
+		OriginURL:   "https://isbe-idp.envs.redisbe.com/",
+		Scopes:      "openid eidas",
+		TokenExpiry: 3600,
+	}
+
+	d.CreateRelyingParty(portalMainRP, "isbesecret")
+
 	// Add Private Area as RP
 	portalRP := &models.RelyingParty{
 		Name:        "ISBE Private Area",
