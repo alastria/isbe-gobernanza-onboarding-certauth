@@ -1,0 +1,97 @@
+name: Release
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+  packages: write
+
+jobs:
+  release-snapshot:
+    if: github.event_name == 'pull_request'
+    name: Release Snapshot
+    concurrency:
+      group: docker-${{ github.head_ref || github.ref_name }}
+      cancel-in-progress: true
+    runs-on: ubuntu-latest
+    environment: local
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Compute PR-based snapshot suffix
+        if: github.event_name == 'pull_request'
+        run: echo "SNAPSHOT_SUFFIX=-pr-${{ github.event.number }}" >> $GITHUB_ENV
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push docker image
+        env:
+          PROJECT_NAME: "isbe-certauth"
+          VERSION: "1.0.0"
+          SNAPSHOT_SUFFIX: ${{ env.SNAPSHOT_SUFFIX }}
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}${SNAPSHOT_SUFFIX}"
+
+          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
+
+          docker build -f Dockerfile --build-arg SKIP_TESTS=true -t "${ECR_IMAGE}" .
+
+          docker push "${ECR_IMAGE}"
+
+  release:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+    name: Release
+    runs-on: ubuntu-latest
+    environment: local
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Build and Push docker image
+        env:
+          PROJECT_NAME: "isbe-certauth"
+          VERSION: "1.0.0"
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+        run: |
+          set -euo pipefail
+          TAG="v${VERSION}"
+
+          ECR_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${TAG}"
+          ECR_LATEST="${ECR_REGISTRY}/${ECR_REPOSITORY}:latest"
+
+          docker build -f Dockerfile --build-arg SKIP_TESTS=true -t "${ECR_IMAGE}" .          
+          docker tag "${ECR_IMAGE}" "${ECR_LATEST}"
+
+          docker push "${ECR_IMAGE}"
+          docker push "${ECR_LATEST}"
