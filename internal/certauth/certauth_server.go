@@ -40,7 +40,7 @@ var viewsfs embed.FS
 // New creates a new CertAuth server
 func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg certconfig.Config) *Server {
 
-	// The engine to display the screens (HTML) to the users
+	// The engine to display the screens HTML screens to the users
 	htmlrender, err := html.NewRendererFiber(templateDebug, viewsfs, "internal/certauth/views")
 	if err != nil {
 		slog.Error("Failed to initialize template engine", "error", err)
@@ -128,7 +128,7 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 
 	// The JavaScript in the Login page polls the backend to see when the Wallet has sent the
 	// Authentication Response, to know when to continue.
-	s.app.Get("/wallet/poll", s.APIWalletPoll)
+	s.app.Get("/wallet/poll", s.APIWalletLoginPagePoll)
 
 	s.app.Get("/wallet/authenticationrequest", s.APIWalletAuthenticationRequest)
 	s.app.Post("/wallet/authenticationresponse", s.APIWalletAuthenticationResponse)

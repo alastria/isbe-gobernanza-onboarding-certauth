@@ -261,19 +261,20 @@ func (s *Server) WalletLoginPage(c *fiber.Ctx) error {
 
 	slog.Info("Wallet authentication request created", "wallet_auth_request", walletAuthRequest)
 
-	// Present a screen with the QR code to be scanned by the Wallet
-	data, err := renderWalletLogin(verifierURL, authCode)
+	// Generate the data for the login page as a map
+	data, err := dataForWalletLogin(verifierURL, authCode)
 	if err != nil {
 		errorCode := "server_error"
-		errorDesc := errl.Errorf("failed to render login page: %w", err).Error()
+		errorDesc := errl.Errorf("failed to generate login page data: %w", err).Error()
 		return s.handleAuthorizationError(c, authProcess.RedirectURI, authProcess.State, errorCode, errorDesc)
 	}
 
+	// Present a screen with the QR code to be scanned by the Wallet
 	return s.html.Render(c, "wallet_login", data)
 
 }
 
-func renderWalletLogin(verifierURL string, authRequestID string) (map[string]any, error) {
+func dataForWalletLogin(verifierURL string, authRequestID string) (map[string]any, error) {
 
 	// Get our URL defined in the config
 
@@ -309,7 +310,9 @@ func renderWalletLogin(verifierURL string, authRequestID string) (map[string]any
 
 }
 
-func (s *Server) APIWalletPoll(c *fiber.Ctx) error {
+// APIWalletLoginPagePoll is the endpoint called periodically by the Wallet Login page to check
+// if the authentication request has been processed or is still pending.
+func (s *Server) APIWalletLoginPagePoll(c *fiber.Ctx) error {
 
 	// Get state from query parameter
 	authReqId := c.Query("state")
@@ -329,17 +332,17 @@ func (s *Server) APIWalletPoll(c *fiber.Ctx) error {
 	}
 
 	if authProcess.FinishedWalletAuth {
-
-		// Redirect to the caller sending the auth code and the state
+		// The authentication request has been processed, so we redirect to the caller
+		// with the auth code and the state.
 		redirectURL := fmt.Sprintf("%s?code=%s", authProcess.RedirectURI, authProcess.Code)
 		if authProcess.State != "" {
 			redirectURL += fmt.Sprintf("&state=%s", authProcess.State)
 		}
-
 		return c.Redirect(redirectURL, fiber.StatusFound)
 
 	} else {
-
+		// The authentication request is still pending, so we return "pending" to the Wallet Login page, which
+		// will call this endpoint again after a short delay.
 		return c.SendString("pending")
 
 	}
@@ -959,13 +962,25 @@ func (s *Server) handleVerifyEmailCode(c *fiber.Ctx) error {
 	// Update the email field in the certificate data
 	certData.Subject.EmailAddress = storedEmail
 
+	// Get the current date
+	currentDate := time.Now()
+	year := currentDate.Year()
+	month := currentDate.Month()
+	day := currentDate.Day()
+	currentDateMap := map[string]int{
+		"year":  year,
+		"month": int(month),
+		"day":   day,
+	}
+
 	// Render the certificate consent template
-	return s.html.Render(c, "4_request_certificate_consent", fiber.Map{
+	return s.html.Render(c, "4_contract", fiber.Map{
 		"authCode":    authCode,
 		"authCodeObj": authProcess,
 		"certType":    certData.CertificateType,
 		"subject":     certData.Subject,
 		"email":       storedEmail,
+		"date":        currentDateMap,
 	})
 }
 

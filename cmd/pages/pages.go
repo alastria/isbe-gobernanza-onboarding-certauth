@@ -23,7 +23,7 @@ func main() {
 	fmt.Println(wd)
 
 	// The engine to display the screens (HTML) to the users
-	htmlrender, err := html.NewRendererFiber(true, viewsfs, "internal/onboard/views")
+	htmlrender, err := html.NewRendererFiber(true, viewsfs, "internal/certauth/views")
 	if err != nil {
 		slog.Error("Failed to initialize template engine", "error", err)
 		panic(err)
@@ -41,10 +41,15 @@ func main() {
 	app.Use(recover.New())
 
 	app.Get("/page/:name", func(c *fiber.Ctx) error {
+		slog.Info("Rendering page", "name", c.Params("name"))
 		name := c.Params("name")
 
 		subject := fiber.Map{
+			"Day":                    "26",
+			"Month":                  "Noviembre",
+			"Year":                   "2025",
 			"OrganizationIdentifier": "VATES-12345678K",
+			"Organization":           "Good Air S.L.",
 			"Email":                  "jesus@alastria.io",
 		}
 
