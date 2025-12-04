@@ -14,9 +14,9 @@ func (d *Database) initializeTestData() error {
 	portalMainRP := &models.RelyingParty{
 		Name:        "ISBE Main Private Area",
 		Description: "The ISBE Main Private Area application",
-		ClientID:    "https://isbe-idp.envs.redisbe.com",
-		RedirectURL: "https://isbe-idp.envs.redisbe.com/auth/realms/dev-isbe/broker/certificado-representante/endpoint",
-		OriginURL:   "https://isbe-idp.envs.redisbe.com/",
+		ClientID:    "https://idp.dev.cloud-w.envs.redisbe.com",
+		RedirectURL: "https://idp.dev.cloud-w.envs.redisbe.com/auth/realms/dev-isbe/broker/certificado-representante/endpoint",
+		OriginURL:   "https://idp.dev.cloud-w.envs.redisbe.com/",
 		Scopes:      "openid eidas",
 		TokenExpiry: 3600,
 	}
