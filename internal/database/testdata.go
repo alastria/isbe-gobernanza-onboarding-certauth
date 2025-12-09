@@ -20,8 +20,7 @@ func (d *Database) initializeTestData() error {
 		Scopes:      "openid eidas",
 		TokenExpiry: 3600,
 	}
-
-	d.CreateRelyingParty(portalMainRP, "isbesecret")
+	d.UpsertRelyingParty(portalMainRP, "isbesecret")
 
 	// Add Private Area as RP
 	portalRP := &models.RelyingParty{
@@ -33,8 +32,7 @@ func (d *Database) initializeTestData() error {
 		Scopes:      "openid eidas",
 		TokenExpiry: 3600,
 	}
-
-	d.CreateRelyingParty(portalRP, "isbesecret")
+	d.UpsertRelyingParty(portalRP, "isbesecret")
 
 	// Add Catalog as RP
 	catalogRP := &models.RelyingParty{
@@ -46,8 +44,7 @@ func (d *Database) initializeTestData() error {
 		Scopes:      "openid eidas",
 		TokenExpiry: 3600,
 	}
-
-	d.CreateRelyingParty(catalogRP, "isbesecret")
+	d.UpsertRelyingParty(catalogRP, "isbesecret")
 
 	// Add ISBE Onboarding RP
 	onboardRP := &models.RelyingParty{

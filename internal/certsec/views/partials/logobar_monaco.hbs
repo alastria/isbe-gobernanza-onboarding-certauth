@@ -1,8 +1,5 @@
-{{define "logobar"}}
+{{ define "logobar_monaco" }}
 <style>
-    body {
-        background-color: #f9f3e7
-    }
 </style>
 
 <style>
@@ -28,11 +25,17 @@
         object-fit: contain;
     }
 
+    .company-logo {
+        padding-top: 12px;
+        padding-left: 20px;
+        padding-bottom: 12px;
+    }
+
     .center-group {
         display: flex;
         align-items: center;
 
-        margin-left: 100px;
+        margin-left: 20px;
     }
 
 
@@ -91,8 +94,8 @@
 
     .cta-button {
         padding: 8px 16px;
-        font-size: 14px;
-        font-weight: 600;
+        font-size: 0.8rem;
+        font-weight: 500;
         color: white;
         background-color: black;
         /* Indigo-600 equivalent */
@@ -138,15 +141,8 @@
     }
 </style>
 
-<header class="myheader">
+<header class="myheader" style="margin-left: 150px;">
 
-    <!-- 1. Company Logo (Left Side) -->
-    <div class="company-logo">
-        <a href="https://redisbe.com">
-            <img src="/static/images/isbe_logo_image.svg" alt="nextgeneration" width="220" height="53" loading="lazy" />
-            <img src="/static/images/isbe_logo_text.svg" alt="nextgeneration" width="220" height="53" loading="lazy" />
-        </a>
-    </div>
 
     <div class="center-group">
         <div class="sponsor-logos">
@@ -164,9 +160,9 @@
         <!-- Button Group (CTA) -->
         {{ if .}}
         <div class="right item">
-            <a href="/logout" class="ui black button">Desconectar</a>
+            <div class="cta-button">{{ or .subject.CommonName .subject.Organization }}</div>
         </div>
         {{end}}
     </div>
 </header>
-{{end}}
+{{ end }}

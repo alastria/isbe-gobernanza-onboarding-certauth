@@ -1,15 +1,19 @@
+{{define "error"}}
+
 {{template "partials/preamble"}}
 
-    {{template "partials/logobar"}}
+{{template "partials/logobar"}}
 
-    <div class="ui hidden divider"></div>
+<div class="ui hidden divider"></div>
 
-    <div class="ui container">
+<div class="ui container">
 
-        <div class="ui huge header">Ha habido un error</div>
+    <div class="ui huge header">Ha habido un error</div>
 
-        <p>{{ .message }}</p>
+    <p>{{ .message }}</p>
 
-    </div>
+</div>
 
 {{template "partials/postamble"}}
+
+{{end}}

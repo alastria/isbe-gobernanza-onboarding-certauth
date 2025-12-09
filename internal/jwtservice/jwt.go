@@ -28,8 +28,8 @@ type JWTService struct {
 	issuerdid  string
 }
 
-// NewService creates a new JWT service
-func NewService(issuer string) (*JWTService, error) {
+// New creates a new JWT service
+func New(issuer string) (*JWTService, error) {
 
 	// Generate EC key pair for token signing
 	// This is efemeral and only valid while the server is up.

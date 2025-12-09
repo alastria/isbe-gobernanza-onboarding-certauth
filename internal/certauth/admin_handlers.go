@@ -3,7 +3,31 @@ package certauth
 import (
 	"github.com/evidenceledger/certauth/internal/errl"
 	"github.com/gofiber/fiber/v2"
+	"github.com/gofiber/fiber/v2/middleware/basicauth"
 )
+
+func (s *Server) registerAdminHandlers(adminPassword string) {
+
+	admin := s.httpServer.Group("/admin")
+
+	// Protect the admin area with basic auth
+	adminAuth := basicauth.New(basicauth.Config{
+		Users: map[string]string{
+			"admin": adminPassword,
+		},
+		Realm: "Admin Area",
+	})
+
+	admin.Use(adminAuth)
+
+	admin.Get("/admin", s.AdminDashboard)
+
+	admin.Get("/rp", s.ListRP)
+	admin.Post("/rp", s.CreateRP)
+	admin.Put("/rp/:id", s.UpdateRP)
+	admin.Delete("/rp/:id", s.DeleteRP)
+
+}
 
 // AdminDashboard handles admin dashboard
 func (s *Server) AdminDashboard(c *fiber.Ctx) error {

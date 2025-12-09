@@ -1,8 +1,5 @@
-{{define "logobar"}}
+{{ define "logobar" }}
 <style>
-    body {
-        background-color: #f9f3e7
-    }
 </style>
 
 <style>
@@ -32,7 +29,7 @@
         display: flex;
         align-items: center;
 
-        margin-left: 100px;
+        margin-left: 50px;
     }
 
 
@@ -91,8 +88,8 @@
 
     .cta-button {
         padding: 8px 16px;
-        font-size: 14px;
-        font-weight: 600;
+        font-size: 0.8rem;
+        font-weight: 500;
         color: white;
         background-color: black;
         /* Indigo-600 equivalent */
@@ -164,9 +161,9 @@
         <!-- Button Group (CTA) -->
         {{ if .}}
         <div class="right item">
-            <a href="/logout" class="ui black button">Desconectar</a>
+            <div class="cta-button">{{ or .subject.CommonName .subject.Organization }}</div>
         </div>
         {{end}}
     </div>
 </header>
-{{end}}
+{{ end }}
