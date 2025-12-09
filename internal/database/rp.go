@@ -10,6 +10,7 @@ import (
 )
 
 // GetRelyingParty retrieves a relying party by client ID
+// If the relying party is not found, it returns nil, nil
 func (d *Database) GetRelyingParty(clientID string) (*models.RelyingParty, error) {
 	query := `
 		SELECT id, name, description, client_id, client_secret_hash, 
@@ -37,6 +38,7 @@ func (d *Database) GetRelyingParty(clientID string) (*models.RelyingParty, error
 }
 
 // ListRelyingParties retrieves all relying parties
+// If no relying parties are found, it returns an empty slice, nil
 func (d *Database) ListRelyingParties() ([]models.RelyingParty, error) {
 	query := `
 		SELECT id, name, description, client_id, redirect_url, 
@@ -101,6 +103,44 @@ func (d *Database) CreateRelyingParty(rp *models.RelyingParty, clientSecret stri
 	return nil
 }
 
+// UpsertRelyingParty inserts or updates a relying party
+func (d *Database) UpsertRelyingParty(rp *models.RelyingParty, clientSecret string) error {
+
+	if len(clientSecret) < 8 {
+		return errl.Errorf("client secret must be at least 8 characters long")
+	}
+
+	// Hash the client secret
+	hashedSecret, err := bcrypt.GenerateFromPassword([]byte(clientSecret), bcrypt.DefaultCost)
+	if err != nil {
+		return errl.Errorf("failed to hash client secret: %w", err)
+	}
+
+	query := `
+		INSERT INTO relying_parties (
+			name, description, client_id, client_secret_hash, 
+			redirect_url, origin_url, scopes, token_expiry
+		) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+		ON CONFLICT (client_id) DO UPDATE
+		SET name = ?, description = ?, client_secret_hash = ?, 
+		    redirect_url = ?, origin_url = ?, scopes = ?, token_expiry = ?
+	`
+
+	_, err = d.db.Exec(query,
+		rp.Name, rp.Description, rp.ClientID, hashedSecret,
+		rp.RedirectURL, rp.OriginURL, rp.Scopes, rp.TokenExpiry,
+		rp.Name, rp.Description, hashedSecret,
+		rp.RedirectURL, rp.OriginURL, rp.Scopes, rp.TokenExpiry,
+	)
+
+	if err != nil {
+		return errl.Errorf("failed to create or update relying party: %w", err)
+	}
+
+	slog.Info("Created or updated relying party", "client_id", rp.ClientID, "name", rp.Name)
+	return nil
+}
+
 // UpdateRelyingParty updates an existing relying party
 func (d *Database) UpdateRelyingParty(rp *models.RelyingParty, clientSecret string) error {
 	var query string
@@ -146,6 +186,7 @@ func (d *Database) UpdateRelyingParty(rp *models.RelyingParty, clientSecret stri
 }
 
 // DeleteRelyingParty deletes a relying party
+// If the relying party is not found, it returns an error
 func (d *Database) DeleteRelyingParty(id int) error {
 	query := `DELETE FROM relying_parties WHERE id = ?`
 

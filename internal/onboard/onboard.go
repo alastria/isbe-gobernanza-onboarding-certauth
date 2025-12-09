@@ -51,7 +51,7 @@ func New(internalPort, ourURL, providerURL, clientID, clientSecret string) *Serv
 	slog.Info("Initializing RP", "internal_port", internalPort, "our_url", ourURL, "provider_url", providerURL, "client_id", clientID)
 
 	// Initialize the template engine
-	htmlrender, err := html.NewRendererStd(templateDebug, viewsfs, "internal/onboard/views")
+	htmlrender, err := html.NewRendererStd(templateDebug, viewsfs, "internal/onboard/views", ".hbs")
 	if err != nil {
 		slog.Error("Failed to initialize template engine", "error", err)
 		panic(err)
@@ -89,7 +89,13 @@ func (s *Server) Start() error {
 	// Configure how to call the provider via discovery
 	provider, err := oidc.NewProvider(ctx, s.providerURL)
 	if err != nil {
-		return errl.Errorf("failed to create provider: %w", err)
+		// Retry after 2 seconds, just in case the provider is not ready yet
+		// After the retry, we assume it is a permanent error
+		time.Sleep(2 * time.Second)
+		provider, err = oidc.NewProvider(ctx, s.providerURL)
+		if err != nil {
+			return errl.Errorf("failed to create provider: %w", err)
+		}
 	}
 
 	// Get an IDTokenVerifier that uses the provider's key set to verify JWTs

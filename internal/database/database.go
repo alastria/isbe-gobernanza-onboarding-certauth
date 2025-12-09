@@ -2,9 +2,9 @@ package database
 
 import (
 	"database/sql"
-	"fmt"
 	"log/slog"
 
+	"github.com/evidenceledger/certauth/internal/errl"
 	_ "github.com/mattn/go-sqlite3"
 )
 
@@ -22,18 +22,18 @@ func New() *Database {
 func (d *Database) Initialize() error {
 	db, err := sql.Open("sqlite3", "./certauth.db")
 	if err != nil {
-		return fmt.Errorf("failed to open database: %w", err)
+		return errl.Errorf("failed to open database: %w", err)
 	}
 	d.db = db
 
 	// Create tables
 	if err := d.createTables(); err != nil {
-		return fmt.Errorf("failed to create tables: %w", err)
+		return errl.Errorf("failed to create tables: %w", err)
 	}
 
 	// Initialize with test data if empty
 	if err := d.initializeTestData(); err != nil {
-		return fmt.Errorf("failed to initialize test data: %w", err)
+		return errl.Errorf("failed to initialize test data: %w", err)
 	}
 
 	slog.Info("Database initialized")
@@ -61,6 +61,8 @@ func (d *Database) createTables() error {
 			organization TEXT,
 			email TEXT,
 			country TEXT,
+			contract_form BLOB,
+			eidas_cert TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,
@@ -68,8 +70,13 @@ func (d *Database) createTables() error {
 
 	for _, query := range queries {
 		if _, err := d.db.Exec(query); err != nil {
-			return fmt.Errorf("failed to execute query: %w", err)
+			return errl.Errorf("failed to execute query: %w", err)
 		}
+	}
+
+	// Run the migrations
+	if err := RunMigrationsUp(d.db); err != nil {
+		return errl.Errorf("failed to run migrations: %w", err)
 	}
 
 	return nil

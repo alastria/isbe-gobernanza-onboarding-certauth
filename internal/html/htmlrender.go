@@ -3,7 +3,6 @@ package html
 import (
 	"bytes"
 	"embed"
-	"io/fs"
 	"log/slog"
 	"net/http"
 	"os"
@@ -23,14 +22,13 @@ type RendererStd struct {
 
 // NewRendererFiber creates a new HTML renderer.
 // It supports both embedded templates (in viewsfs) and external templates (in extDir).
-// If templateDebug is true, the templates are loaded from the directory specified in extDir.
-// If templateDebug is false, the templates are loaded from the embedded directory.
-// Templates are reloaded in runtime, to allow dynamic changes.
+// If reload is true, the templates are loaded from the directory specified in extDir.
+// If reload is false, the templates are loaded from the embedded directory.
 // viewsfs is the filesystem containing the views.
 // extDir is the directory containing the external templates.
-func NewRendererFiber(templateDebug bool, viewsfs embed.FS, extDir string) (*RendererFiber, error) {
+func NewRendererFiber(reload bool, viewsfs embed.FS, extDir string, extension string) (*RendererFiber, error) {
 
-	engine, err := newEngine(templateDebug, viewsfs, extDir)
+	engine, err := newEngine(reload, viewsfs, extDir, extension)
 	if err != nil {
 		return nil, errl.Error(err)
 	}
@@ -42,9 +40,9 @@ func NewRendererFiber(templateDebug bool, viewsfs embed.FS, extDir string) (*Ren
 	return renderer, nil
 }
 
-func NewRendererStd(templateDebug bool, viewsfs embed.FS, extDir string) (*RendererStd, error) {
+func NewRendererStd(reload bool, viewsfs embed.FS, extDir string, extension string) (*RendererStd, error) {
 
-	engine, err := newEngine(templateDebug, viewsfs, extDir)
+	engine, err := newEngine(reload, viewsfs, extDir, extension)
 	if err != nil {
 		return nil, errl.Error(err)
 	}
@@ -56,40 +54,62 @@ func NewRendererStd(templateDebug bool, viewsfs embed.FS, extDir string) (*Rende
 	return renderer, nil
 }
 
-func newEngine(templateDebug bool, viewsfs embed.FS, extDir string) (*html.Engine, error) {
-	// Try to load first the embedded templates, and later the user-provided ones
-	var engine *html.Engine
-
-	// Use the embedded directory
-	viewsDir, err := fs.Sub(viewsfs, "views")
-	if err != nil {
-		return nil, errl.Error(err)
-	}
-
-	exists := false
+func newEngine(reload bool, viewsfs embed.FS, extDir string, extension string) (*html.Engine, error) {
 
 	// Check if extDir exists in the os file system
+	exists := false
 	fi, err := os.Stat(extDir)
-	if err == nil {
-		if fi.IsDir() {
-			exists = true
-		}
+	if err == nil && fi.IsDir() {
+		exists = true
 	}
 
-	// Use external templates if templateDebug is true, otherwise use embedded templates
 	if exists {
+
+		// Use the user-provided templates in the external directory
 		slog.Info("Using external HTML templates")
-		engine = html.NewFileSystem(http.Dir(extDir), ".hbs")
-		engine.Reload(true)
-	} else {
-		slog.Info("Using embedded HTML templates")
-		engine = html.NewFileSystem(http.FS(viewsDir), ".hbs")
-		engine.Reload(true)
+		engine := html.NewFileSystem(http.Dir(extDir), extension)
+		engine.Reload(reload)
+
+		err = engine.Load()
+		if err != nil {
+			return nil, errl.Errorf("Failed to load external HTML templates: %w", err)
+		}
+
+		return engine, nil
+
 	}
+
+	// entries, err := viewsfs.ReadDir(".")
+	// if err != nil {
+	// 	return nil, errl.Errorf("ReadDir failed: %w", err)
+	// }
+
+	// for _, entry := range entries {
+	// 	if entry.IsDir() {
+	// 		fmt.Println("Dir:", entry.Name())
+	// 	} else {
+	// 		fmt.Println("File:", entry.Name())
+	// 	}
+	// }
+
+	// Use the embedded directory
+	// viewsDir, err := fs.Sub(viewsfs, "views")
+	// if err != nil {
+	// 	return nil, errl.Errorf("Failed to load embedded HTML templates: %w", err)
+	// }
+
+	slog.Info("Using embedded HTML templates")
+	engine := html.NewFileSystem(http.FS(viewsfs), extension)
+	engine.Reload(reload)
 
 	err = engine.Load()
 	if err != nil {
-		return nil, errl.Error(err)
+		return nil, errl.Errorf("Failed to load embedded HTML templates: %w", err)
+	}
+
+	tpls := engine.Templates.Templates()
+	for _, tpl := range tpls {
+		slog.Info("Loaded template", "name", tpl.Name())
 	}
 
 	return engine, nil
