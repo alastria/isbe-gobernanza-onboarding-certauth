@@ -31,6 +31,18 @@ func (d *Database) CreateRegistration(tsaService *tsaservice.TSAService, certifi
 		return errl.Errorf("failed to timestamp data: %w", err)
 	}
 
+	// organization_identifier TEXT UNIQUE NOT NULL,
+	// organization TEXT,
+	// email TEXT,
+	// country TEXT,
+	// contract_form BLOB,
+	// eidas_cert TEXT,
+	// signed_annex TEXT,
+	// timestamp BLOB,
+	// contract_document TEXT,
+	// created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	// updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+
 	query := `
 		INSERT INTO registrations (
 			organization_identifier,
@@ -39,10 +51,11 @@ func (d *Database) CreateRegistration(tsaService *tsaservice.TSAService, certifi
 			country,
 			contract_form,
 			eidas_cert,
+			signed_annex,
 			timestamp,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, jsonb(?), ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, jsonb(?), ?, ?, ?, ?, ?)
 	`
 
 	now := time.Now()
@@ -54,6 +67,7 @@ func (d *Database) CreateRegistration(tsaService *tsaservice.TSAService, certifi
 		certificateData.Subject.Country,
 		formDataJSON,
 		certificateData.CertificateDER,
+		formData.Annex,
 		timestamp,
 		now,
 		now,
@@ -68,6 +82,8 @@ func (d *Database) CreateRegistration(tsaService *tsaservice.TSAService, certifi
 	return nil
 }
 
+// GetRegistration retrieves a registration by organization identifier.
+// Returns the email, form data, and EIDAS certificate.
 func (d *Database) GetRegistration(organizationIdentifier string) (string, *models.ContractForm, string, error) {
 	query := `
 		SELECT email, json(contract_form), eidas_cert

@@ -89,9 +89,7 @@ func main() {
 			NotaryYear:           "2024",
 			NotaryProtocolNumber: "123456",
 			ContractCheckBase:    "",
-			ContractCheckAnexo1:  "",
-			ContractCheckAnexo2:  "",
-			ContractCheckAnexo3:  "",
+			Annex:                "",
 		}
 
 		data := fiber.Map{

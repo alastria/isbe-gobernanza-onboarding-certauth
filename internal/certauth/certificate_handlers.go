@@ -94,7 +94,7 @@ func (s *Server) pageRequestEmail(c *fiber.Ctx) error {
 	certData := authProcess.CertificateData
 
 	// Check if the organization is already registered
-	email, _, _, err := s.db.GetRegistration(certData.OrganizationID)
+	email, contractForm, _, err := s.db.GetRegistration(certData.OrganizationID)
 	if err != nil {
 		return errl.Errorf("error retrieving registration email: %w", err)
 	}
@@ -108,6 +108,7 @@ func (s *Server) pageRequestEmail(c *fiber.Ctx) error {
 
 		// Store email of the user in the authProcess struct
 		authProcess.Email = email
+		authProcess.SignedAnnex = contractForm.Annex
 
 		redirectURL := fmt.Sprintf("%s?code=%s", authProcess.RedirectURI, authProcess.Code)
 		if authProcess.State != "" {
@@ -410,6 +411,9 @@ func (s *Server) handleContractAccepted(c *fiber.Ctx) error {
 		})
 
 	}
+
+	// Update the auth process with the signed annex
+	authProcess.SignedAnnex = formData.Annex
 
 	// Notify the main portal that the registration is complete
 	if err := s.notifyMainPortal(authProcess.CertificateData, storedEmail, &formData); err != nil {

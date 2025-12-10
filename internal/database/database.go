@@ -63,6 +63,9 @@ func (d *Database) createTables() error {
 			country TEXT,
 			contract_form BLOB,
 			eidas_cert TEXT,
+			signed_annex TEXT,
+			timestamp BLOB,
+			contract_document TEXT,
 			created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
 			updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 		)`,

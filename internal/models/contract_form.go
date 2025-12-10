@@ -23,7 +23,5 @@ type ContractForm struct {
 	NotaryYear           string `form:"notary_year" json:"notary_year"`
 	NotaryProtocolNumber string `form:"notary_protocol_number" json:"notary_protocol_number"`
 	ContractCheckBase    string `form:"contract_base" json:"contract_base"`
-	ContractCheckAnexo1  string `form:"contract_anexo_1" json:"contract_anexo_1"`
-	ContractCheckAnexo2  string `form:"contract_anexo_2" json:"contract_anexo_2"`
-	ContractCheckAnexo3  string `form:"contract_anexo_3" json:"contract_anexo_3"`
+	Annex                string `form:"annex" json:"annex"`
 }

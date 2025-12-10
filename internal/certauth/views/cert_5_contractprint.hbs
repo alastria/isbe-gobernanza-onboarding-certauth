@@ -246,6 +246,7 @@
 
             <p>En Madrid, a {{ .TodayDay }} de {{ .TodayMonth }} de {{ .TodayYear }}</p>
 
+            {{if eq .Annex "developer"}}
             <!-- ANEXO I -->
             <div class="ui blue segment">
 
@@ -253,9 +254,9 @@
 
                 <div class="ui positive message">
                     <div class="ui large checkbox">
-                        <input type="checkbox" disabled {{if .ContractCheckAnexo1}}checked{{end}}>
+                        <input type="checkbox" disabled checked>
                         <label>Acepto los términos y condiciones del Anexo I</label>
-                        <input type="hidden" name="contract_anexo_1" value="{{ .ContractCheckAnexo1 }}">
+                        <input type="hidden" name="annex" value="developer">
                     </div>
                 </div>
 
@@ -263,7 +264,9 @@
                         en todo lo no modificado expresamente por este Anexo I.)</em></p>
 
             </div>
+            {{end}}
 
+            {{if eq .Annex "operator"}}
             <div class="ui divider"></div>
 
             <!-- ANEXO II -->
@@ -273,9 +276,9 @@
 
                 <div class="ui positive message">
                     <div class="ui large checkbox">
-                        <input type="checkbox" disabled {{if .ContractCheckAnexo2}}checked{{end}}>
+                        <input type="checkbox" disabled checked>
                         <label>Acepto los términos y condiciones del Anexo II</label>
-                        <input type="hidden" name="contract_anexo_2" value="{{ .ContractCheckAnexo2 }}">
+                        <input type="hidden" name="annex" value="operator">
                     </div>
                 </div>
 
@@ -283,6 +286,7 @@
                         en todo lo no modificado expresamente por este Anexo II.)</em></p>
 
             </div>
+            {{end}}
 
             <div class="ui divider"></div>
 
