@@ -242,13 +242,15 @@ func (s *Server) checkAuthentication(c *fiber.Ctx) (*x509util.ELSIName, error) {
 	}
 
 	// Parse the certificate
-	cert, _, subject, err := x509util.ParseEIDASCertB64Der(certHeader)
+	cert, issuer, subject, err := x509util.ParseEIDASCertB64Der(certHeader)
 	if err != nil {
 		return nil, errl.Errorf("Failed to parse certificate: %w", err)
 	}
 
 	// Check for the serial number
-	if subject.SerialNumber != "IDCES-21442837Y" && subject.SerialNumber != "IDCES-12345678V" {
+	if subject.SerialNumber != "IDCES-21442837Y" && issuer.OrganizationIdentifier != "VATES-G87936159" && issuer.OrganizationIdentifier != "VATES-11111111K" {
+		fmt.Println(subject.SerialNumber)
+		fmt.Println(issuer.OrganizationIdentifier)
 		return nil, errl.Errorf("Certificate serial number is invalid")
 	}
 
@@ -392,7 +394,6 @@ func (s *Server) handleCertificateAuth(c *fiber.Ctx) error {
 
 // Start starts the server
 func (s *Server) Start(ctx context.Context) error {
-	slog.Info("Starting CertSec server", "addr", s.cfg.CertSecPort)
 
 	addr := net.JoinHostPort("0.0.0.0", s.cfg.CertSecPort)
 
@@ -403,6 +404,7 @@ func (s *Server) Start(ctx context.Context) error {
 			errChan <- fmt.Errorf("failed to start server: %w", err)
 		}
 	}()
+	slog.Info("CertSec server started", "addr", s.cfg.CertSecPort)
 
 	// Wait for context cancellation or error
 	select {

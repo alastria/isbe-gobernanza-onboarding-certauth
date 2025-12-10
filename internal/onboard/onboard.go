@@ -48,7 +48,6 @@ var viewsfs embed.FS
 // clientID is our RP client ID as registered in the OP.
 // clientSecret is our RP client secret as registered in the OP.
 func New(internalPort, ourURL, providerURL, clientID, clientSecret string) *Server {
-	slog.Info("Initializing RP", "internal_port", internalPort, "our_url", ourURL, "provider_url", providerURL, "client_id", clientID)
 
 	// Initialize the template engine
 	htmlrender, err := html.NewRendererStd(templateDebug, viewsfs, "internal/onboard/views", ".hbs")
@@ -69,7 +68,7 @@ func New(internalPort, ourURL, providerURL, clientID, clientSecret string) *Serv
 	}
 }
 
-// Start starts the application server
+// Start starts the Relying Party server
 func (s *Server) Start() error {
 
 	http.HandleFunc("/", s.handleHome)
@@ -87,14 +86,19 @@ func (s *Server) Start() error {
 	ctx := context.Background()
 
 	// Configure how to call the provider via discovery
+	// Retry up to 3 times with 2 second sleep to allow the provider to start if it is started in the same process
 	provider, err := oidc.NewProvider(ctx, s.providerURL)
 	if err != nil {
-		// Retry after 2 seconds, just in case the provider is not ready yet
-		// After the retry, we assume it is a permanent error
-		time.Sleep(2 * time.Second)
-		provider, err = oidc.NewProvider(ctx, s.providerURL)
+		for range 3 {
+			time.Sleep(2 * time.Second)
+			provider, err = oidc.NewProvider(ctx, s.providerURL)
+			if err == nil {
+				break
+			}
+		}
+
 		if err != nil {
-			return errl.Errorf("failed to create provider: %w", err)
+			return errl.Errorf("failed to create provider for relying party: %w", err)
 		}
 	}
 
@@ -132,7 +136,7 @@ func (s *Server) Start() error {
 	s.verifier = verifier
 
 	addr := net.JoinHostPort("0.0.0.0", s.internalPort)
-	slog.Info("Starting example RP server", "addr", addr, "op_base_url", s.providerURL)
+	slog.Info("Onboard server started", "addr", addr, "op_base_url", s.providerURL)
 
 	return http.ListenAndServe(addr, nil)
 }

@@ -14,6 +14,7 @@ import (
 	"github.com/evidenceledger/certauth/internal/database"
 	"github.com/evidenceledger/certauth/internal/html"
 	"github.com/evidenceledger/certauth/internal/jwtservice"
+	"github.com/evidenceledger/certauth/tsaservice"
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/favicon"
@@ -33,6 +34,7 @@ type Server struct {
 	jwtService *jwtservice.JWTService
 	htmlRender *html.RendererFiber
 	cache      *cache.Cache
+	tsaService *tsaservice.TSAService
 }
 
 const templateDebug = true
@@ -82,6 +84,12 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 		panic(err)
 	}
 
+	tsaService, err := tsaservice.NewTSAService("", "", "", "")
+	if err != nil {
+		slog.Error("Failed to initialize TSA service", "error", err)
+		panic(err)
+	}
+
 	// Put everything together in a server
 	s := &Server{
 		httpServer: httpServer,
@@ -89,6 +97,7 @@ func New(db *database.Database, cache *cache.Cache, adminPassword string, cfg ce
 		jwtService: jwtService,
 		htmlRender: htmlrender,
 		cache:      cache,
+		tsaService: tsaService,
 		cfg:        cfg,
 	}
 
@@ -121,7 +130,6 @@ func (s *Server) Start(ctx context.Context) error {
 	}
 
 	addr := net.JoinHostPort("0.0.0.0", s.cfg.CertAuthPort)
-	slog.Info("Starting CertAuth server", "addr", addr)
 
 	// Start server in goroutine
 	errChan := make(chan error, 1)
@@ -130,6 +138,7 @@ func (s *Server) Start(ctx context.Context) error {
 			errChan <- fmt.Errorf("failed to start server: %w", err)
 		}
 	}()
+	slog.Info("CertAuth server started", "addr", addr)
 
 	// Wait for context cancellation or error
 	select {

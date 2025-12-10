@@ -146,6 +146,9 @@ func (s *JWTService) GenerateIDTokenForCert(authProcess *models.AuthProcess, cer
 	// Add certificate type information
 	claims["elsi_certificate_type"] = certData.CertificateType
 
+	// Add signed annex information
+	claims["signed_annex"] = authProcess.SignedAnnex
+
 	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
 

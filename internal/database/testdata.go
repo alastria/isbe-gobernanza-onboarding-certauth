@@ -51,15 +51,13 @@ func (d *Database) initializeTestData() error {
 		Name:        "ISBE Onboarding",
 		Description: "The ISBE Onboarding Application",
 		ClientID:    "isbeonboard",
-		RedirectURL: "https://onboard.evidenceledger.eu/callback",
-		OriginURL:   "https://onboard.evidenceledger.eu",
+		RedirectURL: "https://onboard-dev.redisbe.com/callback",
+		OriginURL:   "https://onboard-dev.redisbe.com/",
 		Scopes:      "openid eidas",
 		TokenExpiry: 3600,
 	}
 
-	if err := d.CreateRelyingParty(onboardRP, "isbesecret"); err != nil {
-		slog.Error("Failed to create ISBE Onboarding RP", "error", err)
-	}
+	d.UpsertRelyingParty(onboardRP, "isbesecret")
 
 	// Add development ISBE Onboarding RP
 	testOnboardRP := &models.RelyingParty{
@@ -72,9 +70,7 @@ func (d *Database) initializeTestData() error {
 		TokenExpiry: 3600,
 	}
 
-	if err := d.CreateRelyingParty(testOnboardRP, "isbesecret"); err != nil {
-		slog.Error("Failed to create ISBE Onboarding RP", "error", err)
-	}
+	d.UpsertRelyingParty(testOnboardRP, "isbesecret")
 
 	// Add development ISBE Onboarding RP
 	testIssuerRP := &models.RelyingParty{
@@ -87,9 +83,7 @@ func (d *Database) initializeTestData() error {
 		TokenExpiry: 3600,
 	}
 
-	if err := d.CreateRelyingParty(testIssuerRP, "isbesecret"); err != nil {
-		slog.Error("Failed to create ISBE Onboarding RP", "error", err)
-	}
+	d.UpsertRelyingParty(testIssuerRP, "isbesecret")
 
 	// Check if we already have test data
 	var count int
