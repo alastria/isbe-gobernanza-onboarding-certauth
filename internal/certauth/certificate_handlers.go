@@ -402,13 +402,22 @@ func (s *Server) handleContractAccepted(c *fiber.Ctx) error {
 	slog.Debug("Stored email", "email", storedEmail)
 
 	// Store the company data in the registrations table
-	if err := s.db.CreateRegistration(authProcess.CertificateData, storedEmail, &formData); err != nil {
+	if err := s.db.CreateRegistration(s.tsaService, authProcess.CertificateData, storedEmail, &formData); err != nil {
 		err = errl.Errorf("creating registration: %w", err)
 		slog.Error(err.Error(), "auth_code", authCode)
 		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
 			"error": err.Error(),
 		})
 
+	}
+
+	// Notify the main portal that the registration is complete
+	if err := s.notifyMainPortal(authProcess.CertificateData, storedEmail, &formData); err != nil {
+		err = errl.Errorf("notifying main portal: %w", err)
+		slog.Error(err.Error(), "auth_code", authCode)
+		return c.Status(fiber.StatusInternalServerError).JSON(fiber.Map{
+			"error": err.Error(),
+		})
 	}
 
 	// Generate a random unique identifier for the SSO session
@@ -446,4 +455,8 @@ func (s *Server) handleContractAccepted(c *fiber.Ctx) error {
 
 	return c.Redirect(redirectURL, fiber.StatusFound)
 
+}
+
+func (s *Server) notifyMainPortal(certData *models.CertificateData, email string, contractForm *models.ContractForm) error {
+	return nil
 }

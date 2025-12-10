@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 
 	"github.com/evidenceledger/certauth/internal/mainserver"
@@ -44,6 +45,12 @@ func main() {
 
 	flag.Parse()
 
+	// Check if we are in development or production.
+	// The environment variable takes precedence over the flag
+	if strings.ToLower(os.Getenv("CERTAUTH_DEVELOPMENT")) == "true" {
+		development = true
+	}
+
 	// Initialize logging
 	logger := slog.New(slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelDebug,
@@ -53,6 +60,8 @@ func main() {
 	// Say if we are in development or not
 	if development {
 		slog.Info("Running in development mode")
+	} else {
+		slog.Info("Running in production mode")
 	}
 
 	// Get admin password from command line (priority) or environment variable
@@ -82,11 +91,12 @@ func main() {
 		}
 	}
 
-	if onboardURL == "" {
+	// The Onboard application/server will be started only if explicitly stated in the environment or flag, or in development mode
+	if os.Getenv("ONBOARD_URL") != "" {
 		onboardURL = os.Getenv("ONBOARD_URL")
-		if onboardURL == "" {
-			onboardURL = "https://onboard.mycredential.eu"
-		}
+	}
+	if development && onboardURL == "" {
+		onboardURL = "https://onboard.mycredential.eu"
 	}
 
 	// Create the configuration

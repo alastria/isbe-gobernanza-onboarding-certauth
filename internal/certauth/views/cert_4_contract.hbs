@@ -247,7 +247,7 @@
 
                 <div class="ui positive message">
                     <div class="ui large checkbox">
-                        <input type="checkbox" name="contract_base">
+                        <input id="contract_base" type="checkbox" name="contract_base">
                         <label>Acepto las estipulaciones del contrato marco</label>
                     </div>
                 </div>
@@ -269,13 +269,13 @@
 
                 <div class="ui positive message">
                     <div class="ui large checkbox">
-                        <input type="checkbox" name="contract_anexo_1">
+                        <input id="contract_developer" type="checkbox" name="contract_developer">
                         <label>Acepto los términos y condiciones del Anexo I</label>
                     </div>
                 </div>
 
                 <p><em>(Las cláusulas generales del Contrato Marco continúan aplicando
-                        en todo lo no modificado expresamente por este Anexo III.)</em></p>
+                        en todo lo no modificado expresamente por este Anexo I.)</em></p>
 
             </div>
 
@@ -288,7 +288,7 @@
 
                 <div class="ui positive message">
                     <div class="ui large checkbox">
-                        <input type="checkbox" name="contract_anexo_2">
+                        <input id="contract_operator" type="checkbox" name="contract_operator">
                         <label>Acepto los términos y condiciones del Anexo II</label>
                     </div>
                 </div>
@@ -299,23 +299,6 @@
             </div>
 
             <div class="ui divider"></div>
-
-            <!-- ANEXO III -->
-            <div class="ui blue segment">
-
-                {{template "anexo_3" .}}
-
-                <div class="ui positive message">
-                    <div class="ui large checkbox">
-                        <input type="checkbox" name="contract_anexo_3">
-                        <label>Acepto los términos y condiciones del Anexo III</label>
-                    </div>
-                </div>
-
-                <p><em>(Las cláusulas generales del Contrato Marco continúan aplicando
-                        en todo lo no modificado expresamente por este Anexo III.)</em></p>
-
-            </div>
 
         </div>
 
@@ -355,7 +338,24 @@
             debugger;
 
             var contract_form = document.forms["contract_form"];
-            var part = contract_form.elements["participant_name"];
+            var contract_base = contract_form.elements["contract_base"];
+            var contract_developer = contract_form.elements["contract_developer"];
+            var contract_operator = contract_form.elements["contract_operator"];
+
+            if (!contract_base.checked) {
+                alert("Debes aceptar las estipulaciones del contrato marco");
+                return;
+            }
+
+            if (!contract_developer.checked && !contract_operator.checked) {
+                alert("Debes aceptar los términos y condiciones del Anexo I o II");
+                return;
+            }
+
+            if (!contract_operator.checked) {
+                alert("Debes aceptar los términos y condiciones del Anexo II");
+                return;
+            }
 
             const data = new FormData(contract_form);
             for (const pair of data.entries()) {

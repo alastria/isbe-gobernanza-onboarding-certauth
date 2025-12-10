@@ -64,16 +64,19 @@ func New(adminPassword string, cfg Config) *Server {
 	certauthServer := certauth.New(db, cache, adminPassword, certCfg)
 	certsecServer := certsec.New(db, cache, certCfg)
 
-	// Create the Onboard application server.
+	// If in development mode, create the Onboard application server.
 	// It uses the CertAuth server as the OP.
 
-	clientid := "isbeonboard"
-	clientsecret := "isbesecret"
-	if cfg.Development {
-		clientid = "testonboard"
-		clientsecret = "isbesecret"
+	var onboardServer *onboard.Server
+	if cfg.OnboardURL != "" {
+		clientid := "isbeonboard"
+		clientsecret := "isbesecret"
+		if cfg.Development {
+			clientid = "testonboard"
+			clientsecret = "isbesecret"
+		}
+		onboardServer = onboard.New(cfg.OnboardPort, cfg.OnboardURL, cfg.CertAuthURL, clientid, clientsecret)
 	}
-	onboardServer := onboard.New(cfg.OnboardPort, cfg.OnboardURL, cfg.CertAuthURL, clientid, clientsecret)
 
 	return &Server{
 		certauthServer: certauthServer,
@@ -120,21 +123,15 @@ func (s *Server) Start(ctx context.Context) error {
 	}()
 
 	// Start Onboard server (default port 8092)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		if err := s.onboardServer.Start(); err != nil {
-			errChan <- fmt.Errorf("onboard server failed: %w", err)
-		}
-	}()
-
-	slog.Info("Servers started",
-		"certauth_port", s.cfg.CertAuthPort,
-		"certsec_port", s.cfg.CertSecPort,
-		"onboard_port", s.cfg.OnboardPort,
-		"certauth_domain", s.cfg.CertAuthURL,
-		"certsec_domain", s.cfg.CertSecURL,
-		"onboard_url", s.cfg.OnboardURL)
+	if s.onboardServer != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := s.onboardServer.Start(); err != nil {
+				errChan <- fmt.Errorf("onboard server failed: %w", err)
+			}
+		}()
+	}
 
 	// Wait for either server to fail or context to be cancelled
 	select {
