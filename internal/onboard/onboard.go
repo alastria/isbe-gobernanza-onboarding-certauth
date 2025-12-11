@@ -89,17 +89,22 @@ func (s *Server) Start() error {
 	// Retry up to 3 times with 2 second sleep to allow the provider to start if it is started in the same process
 	provider, err := oidc.NewProvider(ctx, s.providerURL)
 	if err != nil {
-		for range 3 {
+		slog.Error("Failed to create provider for relying party, retrying", "error", err)
+		for range 10 {
 			time.Sleep(2 * time.Second)
 			provider, err = oidc.NewProvider(ctx, s.providerURL)
-			if err == nil {
+			if err != nil {
+				slog.Error("Retry failed to create provider for relying party", "error", err)
+			} else {
+				slog.Info("Provider for relying party created")
 				break
 			}
 		}
-
-		if err != nil {
-			return errl.Errorf("failed to create provider for relying party: %w", err)
-		}
+	} else {
+		slog.Info("Provider for relying party created")
+	}
+	if err != nil {
+		return errl.Errorf("failed to create provider for relying party: %w", err)
 	}
 
 	// Get an IDTokenVerifier that uses the provider's key set to verify JWTs
