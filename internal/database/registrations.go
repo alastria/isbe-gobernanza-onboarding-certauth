@@ -1,15 +1,47 @@
 package database
 
 import (
+	"bytes"
 	"database/sql"
+	"encoding/json"
+	"fmt"
 	"log/slog"
 	"time"
 
 	"github.com/evidenceledger/certauth/internal/errl"
 	"github.com/evidenceledger/certauth/internal/models"
+	"github.com/evidenceledger/certauth/tsaservice"
 )
 
-func (d *Database) CreateRegistration(certificateData *models.CertificateData, email string) error {
+func (d *Database) CreateRegistration(tsaService *tsaservice.TSAService, certificateData *models.CertificateData, email string, formData *models.ContractForm) error {
+
+	// Convert form data into JSON
+	formDataJSON, err := json.Marshal(formData)
+	if err != nil {
+		return errl.Errorf("failed to marshal form data: %w", err)
+	}
+
+	buf := bytes.Buffer{}
+	buf.Write(formDataJSON)
+	buf.WriteString(certificateData.CertificateDER)
+	tstDataToTimestamp := buf.Bytes()
+
+	timestamp, err := tsaService.Timestamp(tstDataToTimestamp)
+	if err != nil {
+		return errl.Errorf("failed to timestamp data: %w", err)
+	}
+
+	// organization_identifier TEXT UNIQUE NOT NULL,
+	// organization TEXT,
+	// email TEXT,
+	// country TEXT,
+	// contract_form BLOB,
+	// eidas_cert TEXT,
+	// signed_annex TEXT,
+	// timestamp BLOB,
+	// contract_document TEXT,
+	// created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+	// updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
 
 	query := `
 		INSERT INTO registrations (
@@ -17,18 +49,26 @@ func (d *Database) CreateRegistration(certificateData *models.CertificateData, e
 			organization,
 			email,
 			country,
+			contract_form,
+			eidas_cert,
+			signed_annex,
+			timestamp,
 			created_at,
 			updated_at
-		) VALUES (?, ?, ?, ?, ?, ?)
+		) VALUES (?, ?, ?, ?, jsonb(?), ?, ?, ?, ?, ?)
 	`
 
 	now := time.Now()
 
-	_, err := d.db.Exec(query,
+	_, err = d.db.Exec(query,
 		certificateData.OrganizationID,
 		certificateData.Subject.Organization,
 		email,
 		certificateData.Subject.Country,
+		formDataJSON,
+		certificateData.CertificateDER,
+		formData.Annex,
+		timestamp,
 		now,
 		now,
 	)
@@ -38,27 +78,73 @@ func (d *Database) CreateRegistration(certificateData *models.CertificateData, e
 	}
 
 	slog.Info("Created registration", "email", email, "org_id", certificateData.OrganizationID)
+	fmt.Printf("Timestamp: %x\n", timestamp)
 	return nil
 }
 
-func (d *Database) GetRegistrationEmail(organizationIdentifier string) (string, error) {
+// GetRegistration retrieves a registration by organization identifier.
+// Returns the email, form data, and EIDAS certificate.
+func (d *Database) GetRegistration(organizationIdentifier string) (string, *models.ContractForm, string, error) {
 	query := `
-		SELECT email
+		SELECT email, json(contract_form), eidas_cert
 		FROM registrations
 		WHERE organization_identifier = ? 
 	`
 
 	var email string
+	var formData string
+	var eidasCert string
 	err := d.db.QueryRow(query, organizationIdentifier).Scan(
 		&email,
+		&formData,
+		&eidasCert,
 	)
 
 	if err != nil {
 		if err == sql.ErrNoRows {
-			return "", nil
+			return "", nil, "", nil
 		}
-		return "", errl.Errorf("failed to get relying party: %w", err)
+		return "", nil, "", errl.Errorf("failed to get registration: %w", err)
 	}
 
-	return email, nil
+	var form models.ContractForm
+	if err := json.Unmarshal([]byte(formData), &form); err != nil {
+		return "", nil, "", errl.Errorf("failed to unmarshal form data: %w", err)
+	}
+
+	return email, &form, eidasCert, nil
+}
+
+type Registration struct {
+	Email     string
+	FormData  string
+	EidasCert string
+}
+
+func (d *Database) GetRegistrations() ([]Registration, error) {
+	query := `
+		SELECT email, json(contract_form), eidas_cert
+		FROM registrations 
+	`
+
+	rows, err := d.db.Query(query)
+	if err != nil {
+		return nil, errl.Errorf("failed to get registrations: %w", err)
+	}
+	defer rows.Close()
+
+	var registrations []Registration
+	for rows.Next() {
+		var registration Registration
+		if err := rows.Scan(&registration.Email, &registration.FormData, &registration.EidasCert); err != nil {
+			return nil, errl.Errorf("failed to scan registration: %w", err)
+		}
+		registrations = append(registrations, registration)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, errl.Errorf("failed to iterate registrations: %w", err)
+	}
+
+	return registrations, nil
 }

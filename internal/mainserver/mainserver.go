@@ -2,6 +2,7 @@ package mainserver
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"sync"
@@ -15,7 +16,8 @@ import (
 	onboard "github.com/evidenceledger/certauth/internal/onboard"
 )
 
-// Config is the configuration for the server
+// Config is the configuration for the server.
+// It contains the configuration for CertAuth, CertSec and Onboard servers.
 type Config struct {
 	Development  bool
 	CertAuthPort string
@@ -24,22 +26,25 @@ type Config struct {
 	CertSecURL   string
 	OnboardPort  string
 	OnboardURL   string
+	TMFServerURL string
 }
 
-// Server manages both CertAuth and CertSec servers
+// Server manages the CertAuth, CertSec and Onboard servers
 type Server struct {
 	cfg            Config
 	certauthServer *certauth.Server
 	certsecServer  *certsec.Server
 	onboardServer  *onboard.Server
+	tmfServer      string
 	db             *database.Database
 	adminPW        string
 }
 
-// New creates a new server instance
+// New creates a new server instance.
+// It initializes the database, cache, CertAuth, CertSec and Onboard servers.
 func New(adminPassword string, cfg Config) *Server {
 
-	// Create a global cache with expiration time of 10 minutes
+	// Create a global in-memory cache with expiration time of 10 minutes
 	cache := cache.New(10 * time.Minute)
 
 	// Initialize database
@@ -59,16 +64,19 @@ func New(adminPassword string, cfg Config) *Server {
 	certauthServer := certauth.New(db, cache, adminPassword, certCfg)
 	certsecServer := certsec.New(db, cache, certCfg)
 
-	// Create the example RP server.
+	// If in development mode, create the Onboard application server.
 	// It uses the CertAuth server as the OP.
 
-	clientid := "isbeonboard"
-	clientsecret := "isbesecret"
-	if cfg.Development {
-		clientid = "testonboard"
-		clientsecret = "isbesecret"
+	var onboardServer *onboard.Server
+	if cfg.OnboardURL != "" {
+		clientid := "isbeonboard"
+		clientsecret := "isbesecret"
+		if cfg.Development {
+			clientid = "testonboard"
+			clientsecret = "isbesecret"
+		}
+		onboardServer = onboard.New(cfg.OnboardPort, cfg.OnboardURL, cfg.CertAuthURL, clientid, clientsecret)
 	}
-	onboardServer := onboard.New(cfg.OnboardPort, cfg.OnboardURL, cfg.CertAuthURL, clientid, clientsecret)
 
 	return &Server{
 		certauthServer: certauthServer,
@@ -83,6 +91,11 @@ func New(adminPassword string, cfg Config) *Server {
 
 // Start starts both servers: CertAuth and CertSec. Also it starts the Onboarding server
 func (s *Server) Start(ctx context.Context) error {
+
+	if s.db == nil {
+		return errors.New("server not initialized")
+	}
+
 	// Initialize database
 	if err := s.db.Initialize(); err != nil {
 		return fmt.Errorf("failed to initialize database: %w", err)
@@ -91,7 +104,7 @@ func (s *Server) Start(ctx context.Context) error {
 	var wg sync.WaitGroup
 	errChan := make(chan error, 3)
 
-	// Start CertAuth server (port 8090)
+	// Start CertAuth server (default port 8090)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -100,7 +113,7 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Start CertSec server (port 8091)
+	// Start CertSec server (default port 8091)
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
@@ -109,27 +122,21 @@ func (s *Server) Start(ctx context.Context) error {
 		}
 	}()
 
-	// Start Example Onboard server (port 8092)
-	wg.Add(1)
-	go func() {
-		defer wg.Done()
-		time.Sleep(2 * time.Second)
-		if err := s.onboardServer.Start(); err != nil {
-			errChan <- fmt.Errorf("example rp server failed: %w", err)
-		}
-	}()
-
-	slog.Info("Servers started",
-		"certauth_port", s.cfg.CertAuthPort,
-		"certsec_port", s.cfg.CertSecPort,
-		"examplerp_port", s.cfg.OnboardPort,
-		"certauth_domain", s.cfg.CertAuthURL,
-		"certsec_domain", s.cfg.CertSecURL,
-		"examplerp_url", s.cfg.OnboardURL)
+	// Start Onboard server (default port 8092)
+	if s.onboardServer != nil {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			if err := s.onboardServer.Start(); err != nil {
+				errChan <- fmt.Errorf("onboard server failed: %w", err)
+			}
+		}()
+	}
 
 	// Wait for either server to fail or context to be cancelled
 	select {
 	case err := <-errChan:
+		s.db.Close()
 		return err
 	case <-ctx.Done():
 		slog.Info("Shutting down servers")

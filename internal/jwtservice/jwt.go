@@ -28,8 +28,8 @@ type JWTService struct {
 	issuerdid  string
 }
 
-// NewService creates a new JWT service
-func NewService(issuer string) (*JWTService, error) {
+// New creates a new JWT service
+func New(issuer string) (*JWTService, error) {
 
 	// Generate EC key pair for token signing
 	// This is efemeral and only valid while the server is up.
@@ -145,6 +145,9 @@ func (s *JWTService) GenerateIDTokenForCert(authProcess *models.AuthProcess, cer
 
 	// Add certificate type information
 	claims["elsi_certificate_type"] = certData.CertificateType
+
+	// Add signed annex information
+	claims["signed_annex"] = authProcess.SignedAnnex
 
 	// Create token
 	token := jwt.NewWithClaims(jwt.SigningMethodES256, claims)
